@@ -2,7 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import * as $3Dmol from '3dmol';
 
 interface StructureViewerProps {
-    data: string;
+    data: any;
     format: string;
     height?: string;
     width?: string;
@@ -30,6 +30,55 @@ const StructureViewer: React.FC<StructureViewerProps> = ({
         
         // Clear previous model
         viewer.clear();
+
+        if (format === 'bz') {
+            // Render Brillouin Zone
+            const { vertices, edges, kpoints, path } = data;
+
+            // Draw BZ edges
+            edges.forEach((edge: number[]) => {
+                const v1 = vertices[edge[0]];
+                const v2 = vertices[edge[1]];
+                viewer.addLine({
+                    start: { x: v1[0], y: v1[1], z: v1[2] },
+                    end: { x: v2[0], y: v2[1], z: v2[2] },
+                    color: 'black',
+                    linewidth: 1
+                });
+            });
+
+            // Draw High Symmetry Points
+            Object.entries(kpoints).forEach(([label, coords]: [string, any]) => {
+                viewer.addSphere({
+                    center: { x: coords[0], y: coords[1], z: coords[2] },
+                    radius: 0.05,
+                    color: 'red'
+                });
+                viewer.addLabel(label, {
+                    position: { x: coords[0], y: coords[1], z: coords[2] },
+                    backgroundColor: 'white',
+                    fontColor: 'black',
+                    fontSize: 14,
+                    showBackground: true
+                });
+            });
+
+            // Draw Path
+            path.forEach(([startLabel, endLabel]: [string, string]) => {
+                const start = kpoints[startLabel];
+                const end = kpoints[endLabel];
+                viewer.addLine({
+                    start: { x: start[0], y: start[1], z: start[2] },
+                    end: { x: end[0], y: end[1], z: end[2] },
+                    color: 'blue',
+                    linewidth: 3
+                });
+            });
+
+            viewer.zoomTo();
+            viewer.render();
+            return;
+        }
 
         // Add new model
         // format mapping: POSCAR -> vasp, CIF -> cif

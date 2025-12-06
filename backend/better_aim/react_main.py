@@ -310,6 +310,9 @@ Your role is twofold:
      - If the user asks to "show", "visualize", or "display" a structure (POSCAR, CIF, etc.), use the `visualize_structure` tool.
      - **CRITICAL**: You MUST include the EXACT output of `visualize_structure` (the `:::visualize...:::` block) in your final response. Do NOT summarize it.
      - Example response: "Here is the structure: \n:::visualize\n{...}\n:::"
+   - **Brillouin Zone Visualization**:
+     - If the user asks to visualize the "Brillouin Zone", "BZ", or "k-path", use the `visualize_brillouin_zone` tool.
+     - Like structure visualization, you MUST include the EXACT output in your response.
    - When calling mcp tools, do not use named submit_*** tools unless explicitly requested.
 """
     }
