@@ -12,7 +12,8 @@ import {
   Divider,
   Alert,
   Tooltip,
-  Upload
+  Upload,
+  Avatar
 } from 'antd';
 import {
   SendOutlined,
@@ -297,7 +298,10 @@ function Chat() {
           width: 'auto'
         }}>
           {!isUser && (
-            <RobotOutlined style={{ marginRight: '8px', marginTop: '4px', color: '#1677ff' }} />
+            <Avatar 
+              icon={<RobotOutlined />}
+              style={{ marginRight: '12px', marginTop: '4px', backgroundColor: '#1677ff', flexShrink: 0 }} 
+            />
           )}
           <div
             style={{
@@ -308,7 +312,8 @@ function Chat() {
               border: isUser ? 'none' : '1px solid #d9d9d9',
               width: 'auto',
               textAlign: 'left',
-              wordBreak: 'break-word'
+              wordBreak: 'break-word',
+              boxShadow: '0 2px 6px rgba(0,0,0,0.05)'
             }}
           >
             {isUser ? (
@@ -325,7 +330,10 @@ function Chat() {
             )}
           </div>
           {isUser && (
-            <UserOutlined style={{ marginLeft: '8px', marginTop: '4px', color: '#52c41a' }} />
+            <Avatar 
+              icon={<UserOutlined />} 
+              style={{ marginLeft: '12px', marginTop: '4px', backgroundColor: '#87d068', flexShrink: 0 }} 
+            />
           )}
         </div>
       </div>
@@ -353,12 +361,15 @@ function Chat() {
         padding: '0 24px',
         display: 'flex',
         justifyContent: 'space-between',
-        alignItems: 'center'
+        alignItems: 'center',
+        boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
+        zIndex: 10,
+        position: 'relative'
       }}>
         <div style={{ display: 'flex', alignItems: 'center' }}>
           <MessageOutlined style={{ marginRight: '8px', color: '#1677ff' }} />
           <Title level={4} style={{ margin: 0 }}>
-            与 {state.config?.agent_info.name} 协作
+            DeePTB-Pilot
           </Title>
         </div>
 
@@ -384,7 +395,13 @@ function Chat() {
       </Header>
 
       <Layout>
-        <Sider width={300} style={{ background: '#fff', borderRight: '1px solid #f0f0f0' }}>
+        <Sider 
+          width={300} 
+          style={{ background: '#fff', borderRight: '1px solid #f0f0f0' }}
+          collapsible
+          breakpoint="lg"
+          theme="light"
+        >
           <div style={{ padding: '16px', height: '100%', overflowY: 'auto' }}>
             <SessionPanel />
           </div>
@@ -431,72 +448,87 @@ function Chat() {
               />
             )}
 
-            <div style={{ padding: '16px 24px', backgroundColor: '#fff', borderTop: '1px solid #f0f0f0' }}>
-              <Space.Compact style={{ width: '100%', marginBottom: '12px' }}>
-                <Select
-                  value={selectedExample}
-                  onChange={setSelectedExample}
-                  style={{ flex: 1 }}
-                  placeholder="选择示例对话"
-                  options={[
-                    { value: '-', label: '-' },
-                    ...EXAMPLE_MESSAGES.map(ex => ({
-                      value: ex.text,
-                      label: ex.display
-                    }))
-                  ]}
-                />
-              </Space.Compact>
+            <div style={{ padding: '0 24px 24px 24px', backgroundColor: 'transparent' }}>
+              <div style={{
+                backgroundColor: '#fff',
+                borderRadius: '16px',
+                padding: '16px',
+                boxShadow: '0 6px 16px rgba(0,0,0,0.08)',
+                border: '1px solid #f0f0f0'
+              }}>
+                {/* <Space.Compact style={{ width: '100%', marginBottom: '12px' }}>
+                  <Select
+                    value={selectedExample}
+                    onChange={setSelectedExample}
+                    style={{ flex: 1 }}
+                    placeholder="选择示例对话"
+                    variant="borderless"
+                    options={[
+                      { value: '-', label: '-' },
+                      ...EXAMPLE_MESSAGES.map(ex => ({
+                        value: ex.text,
+                        label: ex.display
+                      }))
+                    ]}
+                  />
+                </Space.Compact> */}
 
-              <div style={{ display: 'flex', alignItems: 'flex-end', gap: '8px' }}>
-                <Upload
-                  beforeUpload={handleUpload}
-                  showUploadList={false}
-                  multiple
-                  disabled={uploading || state.loading}
-                >
-                  <Button 
-                    icon={<PaperClipOutlined />} 
-                    loading={uploading}
+                <div style={{ display: 'flex', alignItems: 'flex-end', gap: '8px' }}>
+                  <Upload
+                    beforeUpload={handleUpload}
+                    showUploadList={false}
+                    multiple
+                    disabled={uploading || state.loading}
+                  >
+                    <Button 
+                      icon={<PaperClipOutlined />} 
+                      loading={uploading}
+                      size="large"
+                      type="text"
+                      style={{ marginBottom: '4px' }}
+                    />
+                  </Upload>
+                  <TextArea
+                    value={inputValue}
+                    onChange={(e) => setInputValue(e.target.value)}
+                    onKeyPress={handleKeyPress}
+                    onPaste={(e) => {
+                      const items = e.clipboardData.items;
+                      for (let i = 0; i < items.length; i++) {
+                        if (items[i].kind === 'file') {
+                          const file = items[i].getAsFile();
+                          if (file) handleUpload(file);
+                        }
+                      }
+                    }}
+                    placeholder={`输入你想对 ${state.config?.agent_info.name} 说的话... (支持粘贴/拖拽文件)`}
+                    autoSize={{ minRows: 1, maxRows: 6 }}
+                    variant="borderless"
+                    style={{ flex: 1, resize: 'none', padding: '8px 0' }}
+                    disabled={state.responding || state.loading}
+                  />
+                  <Button
+                    type="primary"
+                    icon={<SendOutlined />}
+                    onClick={handleSendMessage}
+                    loading={state.responding || state.loading}
+                    disabled={!inputValue.trim()}
                     size="large"
-                    type="text"
+                    shape="circle"
                     style={{ marginBottom: '4px' }}
                   />
-                </Upload>
-                <TextArea
-                  value={inputValue}
-                  onChange={(e) => setInputValue(e.target.value)}
-                  onKeyPress={handleKeyPress}
-                  onPaste={(e) => {
-                    const items = e.clipboardData.items;
-                    for (let i = 0; i < items.length; i++) {
-                      if (items[i].kind === 'file') {
-                        const file = items[i].getAsFile();
-                        if (file) handleUpload(file);
-                      }
-                    }
-                  }}
-                  placeholder={`输入你想对 ${state.config?.agent_info.name} 说的话... (支持粘贴/拖拽文件)`}
-                  autoSize={{ minRows: 1, maxRows: 6 }}
-                  style={{ flex: 1, resize: 'none' }}
-                  disabled={state.responding || state.loading}
-                />
-                <Button
-                  type="primary"
-                  icon={<SendOutlined />}
-                  onClick={handleSendMessage}
-                  loading={state.responding || state.loading}
-                  disabled={!inputValue.trim()}
-                  size="large"
-                  style={{ marginBottom: '4px' }}
-                >
-                  发送
-                </Button>
+                </div>
               </div>
             </div>
           </div>
 
-          <Sider width={300} style={{ background: '#fff', borderLeft: '1px solid #f0f0f0' }}>
+          <Sider 
+            width={300} 
+            style={{ background: '#fff', borderLeft: '1px solid #f0f0f0' }}
+            collapsible
+            reverseArrow
+            theme="light"
+          >
             <div style={{ padding: '16px', height: '100%', overflowY: 'auto' }}>
               <ParamPanel />
               <Divider />
