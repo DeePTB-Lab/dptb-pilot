@@ -42,24 +42,8 @@ const StructureViewer: React.FC<StructureViewerProps> = ({
                 viewer.addLine({
                     start: { x: v1[0], y: v1[1], z: v1[2] },
                     end: { x: v2[0], y: v2[1], z: v2[2] },
-                    color: 'black',
-                    linewidth: 1
-                });
-            });
-
-            // Draw High Symmetry Points
-            Object.entries(kpoints).forEach(([label, coords]: [string, any]) => {
-                viewer.addSphere({
-                    center: { x: coords[0], y: coords[1], z: coords[2] },
-                    radius: 0.05,
-                    color: 'red'
-                });
-                viewer.addLabel(label, {
-                    position: { x: coords[0], y: coords[1], z: coords[2] },
-                    backgroundColor: 'white',
-                    fontColor: 'black',
-                    fontSize: 14,
-                    showBackground: true
+                    color: '#00BCD4',
+                    linewidth: 3
                 });
             });
 
@@ -70,8 +54,23 @@ const StructureViewer: React.FC<StructureViewerProps> = ({
                 viewer.addLine({
                     start: { x: start[0], y: start[1], z: start[2] },
                     end: { x: end[0], y: end[1], z: end[2] },
-                    color: 'blue',
-                    linewidth: 3
+                    color: '#FF5722',
+                    linewidth: 15
+                });
+            });
+
+            // Draw High Symmetry Points
+            Object.entries(kpoints).forEach(([label, coords]: [string, any]) => {
+                viewer.addSphere({
+                    center: { x: coords[0], y: coords[1], z: coords[2] },
+                    radius: 0.02,
+                    color: '#FF5722'
+                });
+                viewer.addLabel(label, {
+                    position: { x: coords[0], y: coords[1], z: coords[2] },
+                    fontColor: 'black',
+                    fontSize: 16,
+                    showBackground: false
                 });
             });
 

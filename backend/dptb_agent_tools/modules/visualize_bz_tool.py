@@ -118,38 +118,40 @@ def visualize_brillouin_zone(file_name: str, work_path: str) -> str:
         region = vor.regions[region_index]
         
         # Get vertices of the BZ
-        bz_vertices = [vor.vertices[i] for i in region]
+        # Filter out infinite regions if any (though BZ should be finite)
+        bz_indices = [i for i in region if i != -1]
+        bz_vertices = [vor.vertices[i] for i in bz_indices]
         
-        # Get faces (ridges)
-        # This is a bit tricky with Scipy Voronoi to get just the faces of one region.
-        # Alternative: Use ConvexHull of the vertices?
-        # The BZ is a convex polyhedron.
-        hull = ConvexHull(bz_vertices)
+        # Create a mapping from global Voronoi vertex index to local BZ vertex index
+        global_to_local = {global_idx: local_idx for local_idx, global_idx in enumerate(bz_indices)}
+        
+        # Get edges from Voronoi ridges
+        # Ridges separate two regions. We want ridges that separate our center region (13) from others.
+        edges = []
+        center_index = 13
+        
+        for i, (p1, p2) in enumerate(vor.ridge_points):
+            if p1 == center_index or p2 == center_index:
+                # This ridge is a face of our BZ
+                face_indices = vor.ridge_vertices[i]
+                
+                # Check if face is finite
+                if all(idx != -1 for idx in face_indices):
+                    # Add edges of this face
+                    for j in range(len(face_indices)):
+                        u = face_indices[j]
+                        v = face_indices[(j + 1) % len(face_indices)]
+                        
+                        if u in global_to_local and v in global_to_local:
+                            local_u = global_to_local[u]
+                            local_v = global_to_local[v]
+                            edge = tuple(sorted((local_u, local_v)))
+                            edges.append(edge)
+                            
+        unique_edges = list(set(edges))
         
         # Prepare data for frontend
-        # Vertices
         vertices_list = np.array(bz_vertices).tolist()
-        
-        # Edges (from Hull simplices)
-        edges = []
-        for simplex in hull.simplices:
-            # simplex is a face (list of vertex indices)
-            # We want edges. A face has edges connecting its vertices.
-            # But ConvexHull simplices are triangles (in 3D).
-            # The BZ faces might be polygons.
-            # For visualization, drawing the edges of the triangular mesh is okay, 
-            # but it might look cluttered.
-            # Better to draw the edges of the Voronoi cell directly.
-            
-            # Let's just send the simplices (triangles) and let frontend draw lines?
-            # Or better, extract unique edges from simplices.
-            for i in range(len(simplex)):
-                p1 = int(simplex[i])
-                p2 = int(simplex[(i+1) % len(simplex)])
-                edge = tuple(sorted((p1, p2)))
-                edges.append(edge)
-                
-        unique_edges = list(set(edges))
         
         # High symmetry points
         kpoints = res['point_coords']
