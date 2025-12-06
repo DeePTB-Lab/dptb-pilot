@@ -37,36 +37,30 @@ MCP_TOOLS_URL=http://localhost:${MCP_TOOLS_PORT}/sse
 *   Node.js & npm
 *   已激活 Python 虚拟环境 (推荐: `pybaim`)
 
-### 步骤 1: 启动 MCP 工具服务 (终端 1)
+### 步骤 1: 安装项目
 
-这个服务提供 AI Agent 所需的工具集。为了避免端口冲突，我们将其运行在 `50002` 端口。
+在项目根目录下执行：
 
 ```bash
-# 1. 激活虚拟环境
-source /Users/aisiqg/Software/venv/pybaim/bin/activate
-
-# 2. 设置 PYTHONPATH (确保能找到 backend 目录下的包)
-export PYTHONPATH=$PYTHONPATH:$(pwd)/backend
-
-# 3. 启动服务
-python backend/dptb_agent_tools/main.py
+pip install -e .
 ```
 
-启动成功后，你会看到类似 `Uvicorn running on http://localhost:50002` 的日志。
+这会安装两个命令行工具：`dptb-pilot` (主应用) 和 `dptb-tools` (MCP 工具服务)。
 
-### 步骤 2: 启动主应用 (终端 2)
+### 步骤 2: 启动服务
 
-这个命令会同时启动后端 API 服务 (8000端口) 和前端开发服务器 (50001端口)。
+您需要打开两个终端窗口。
+
+**终端 1: 启动 MCP 工具服务**
 
 ```bash
-# 1. 激活虚拟环境
-source /Users/aisiqg/Software/venv/pybaim/bin/activate
+dptb-tools
+```
 
-# 2. 设置 PYTHONPATH
-export PYTHONPATH=$PYTHONPATH:$(pwd)/backend
+**终端 2: 启动主应用**
 
-# 3. 启动主应用
-python backend/better_aim/react_main.py
+```bash
+dptb-pilot
 ```
 
 启动成功后，会自动尝试打开浏览器。
@@ -84,7 +78,7 @@ export NO_PROXY="localhost,127.0.0.1"
 或者在启动命令前加上：
 
 ```bash
-NO_PROXY="localhost,127.0.0.1" python backend/better_aim/react_main.py
+NO_PROXY="localhost,127.0.0.1" dptb-pilot
 ```
 
 ## 访问地址
@@ -92,3 +86,4 @@ NO_PROXY="localhost,127.0.0.1" python backend/better_aim/react_main.py
 *   **前端界面**: [http://0.0.0.0:50001](http://0.0.0.0:50001) (主要访问入口)
 *   **后端 API**: http://0.0.0.0:8000
 *   **MCP 工具**: http://localhost:50002/sse
+source /Users/aisiqg/Software/venv/pybaim/bin/activate && pip uninstall -y dptb_pilot_backend better_aim dptb_agent_tools && pip install -e .

@@ -5,7 +5,7 @@ import argparse
 from dotenv import load_dotenv
 
 from importlib.metadata import version
-__version__ = version("dptb_agent_tools")
+__version__ = version("dptb_pilot_backend")
 
 def load_tools():
     """
@@ -48,8 +48,8 @@ def parse_args():
     parser.add_argument(
         "--port",
         type=int,
-        default=int(os.getenv("MCP_TOOLS_PORT", 50001)),
-        help="Port to run the MCP server on (default: 50001)"
+        default=int(os.getenv("MCP_TOOLS_PORT", 50002)),
+        help="Port to run the MCP server on (default: 50002)"
     )
     parser.add_argument(
         "--host",
@@ -87,7 +87,12 @@ def main():
     Main function to run the MCP tool.
     """
     print_version()
-    load_dotenv()
+    if load_dotenv():
+        print("✅ Environment variables loaded from .env")
+    else:
+        print("⚠️ .env file not found or empty")
+        
+    print(f"MCP_TOOLS_PORT: {os.getenv('MCP_TOOLS_PORT', 'Not Set (using default)')}")
     args = parse_args()  
     
     from dptb_agent_tools.env import set_envs, create_workpath
