@@ -284,7 +284,6 @@ function Chat() {
     return (
       <div
         key={index}
-        className={`chat-message ${isUser ? 'user' : 'assistant'}`}
         style={{
           display: 'flex',
           justifyContent: isUser ? 'flex-end' : 'flex-start',
@@ -294,8 +293,8 @@ function Chat() {
         <div style={{
           display: 'flex',
           alignItems: 'flex-start',
-          maxWidth: isUser ? 'fit-content' : '70%',
-          width: isUser ? 'auto' : '100%'
+          maxWidth: '70%',
+          width: 'auto'
         }}>
           {!isUser && (
             <RobotOutlined style={{ marginRight: '8px', marginTop: '4px', color: '#1677ff' }} />
@@ -307,12 +306,13 @@ function Chat() {
               backgroundColor: isUser ? '#1677ff' : '#f5f5f5',
               color: isUser ? 'white' : '#262626',
               border: isUser ? 'none' : '1px solid #d9d9d9',
-              width: isUser ? 'auto' : '100%',
+              width: 'auto',
+              textAlign: 'left',
               wordBreak: 'break-word'
             }}
           >
             {isUser ? (
-              <Text>{msg.content}</Text>
+              <Text style={{ color: 'white' }}>{msg.content}</Text>
             ) : (
               <div className="markdown-content">
                 {formatMessage(msg.content)}
