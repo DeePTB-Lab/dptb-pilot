@@ -80,7 +80,7 @@ function FilePanel() {
       </div>
 
       <Text type="secondary" style={{ fontSize: '12px', display: 'block', marginBottom: '12px' }}>
-        工作目录: /tmp/{state.userId}
+        工作目录: workspace/{state.userId}/files
       </Text>
 
       {state.loading ? (
