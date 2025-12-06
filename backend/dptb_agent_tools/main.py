@@ -14,8 +14,8 @@ def load_tools():
     module_dir = Path(__file__).parent / "modules"
     
     for py_file in module_dir.glob("*.py"):
-        if py_file.name.startswith("_") or py_file.stem in ["utils", "comm", "fs_tool"]: 
-            continue  # skip __init__.py, utils.py, and fs_tool (Pure RAG Mode)
+        if py_file.name.startswith("_") or py_file.stem in ["utils", "comm"]: 
+            continue  # skip __init__.py and utils.py
         
         module_name = f"dptb_agent_tools.modules.{py_file.stem}"
         try:
