@@ -174,7 +174,10 @@ function Chat() {
                     {children}
                   </code>
                 )
-              }
+              },
+              img: (props) => (
+                <img {...props} style={{ maxWidth: '100%', height: 'auto', borderRadius: '8px' }} />
+              )
             }}>{parts[0]}</ReactMarkdown>}
             
             <div style={{ margin: '10px 0' }}>
@@ -200,7 +203,10 @@ function Chat() {
                     {children}
                   </code>
                 )
-              }
+              },
+              img: (props) => (
+                <img {...props} style={{ maxWidth: '100%', height: 'auto', borderRadius: '8px' }} />
+              )
             }}>{parts[1]}</ReactMarkdown>}
           </div>
         );
@@ -230,7 +236,10 @@ function Chat() {
                 {children}
               </code>
             )
-          }
+          },
+          img: (props) => (
+            <img {...props} style={{ maxWidth: '100%', height: 'auto', borderRadius: '8px' }} />
+          )
         }}
       >
         {content}
