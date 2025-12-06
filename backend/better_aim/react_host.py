@@ -287,7 +287,7 @@ async def websocket_chat(websocket: WebSocket, session_id: str):
             response_text = ""
             async for response in call_agent_async(user_message, runner, session_id[:4], session_id):
                 if response["type"] in ["streaming_response", "final_response"]:
-                    response_text += response.get("content", "")
+                    response_text += (response.get("content") or "")
                     await websocket.send_text(json.dumps(response))
 
             # 更新聊天历史
