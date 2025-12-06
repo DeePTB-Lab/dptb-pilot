@@ -22,7 +22,7 @@ def create_llm_agent(session_id: str, mcp_tools_url: str, agent_info: dict, mode
         model=LiteLlm(**model_config),
         name=f"{agent_info['name'].replace('-','_')}_{session_id}",
         description=agent_info['description'],
-        instruction=agent_info['instruction'] + "when calling mcp tools, do not use named submit_*** tools.",
+        instruction=agent_info['instruction'],
         tools=[mcp_tools(mcp_tools_url=mcp_tools_url)],
         before_tool_callback=tool_modify_guardrail
     )
