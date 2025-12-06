@@ -39,16 +39,42 @@ def band_with_sk_model(
 
     assert model_file_name != "your_model_file_name", "SK模型必须输入"
     assert structure_file_name != "your_structure_file_name", "输入的结构必须输入"
+    
+    work_dir = Path(work_path).absolute()
+    model_path = work_dir / model_file_name
+    structure_path = work_dir / structure_file_name
+    
+    if not model_path.exists():
+        raise FileNotFoundError(f"Model file not found: {model_path}")
+    if not structure_path.exists():
+        raise FileNotFoundError(f"Structure file not found: {structure_path}")
 
-    os.makedirs("/tmp/running", exist_ok=True)
-    os.chdir("/tmp/running")
+    import tempfile
+    import shutil
+    
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_path = Path(temp_dir)
+        
+        # Copy input files to temp dir
+        shutil.copy(model_path, temp_path / model_file_name)
+        shutil.copy(structure_path, temp_path / structure_file_name)
+        
+        cmd = ['dptb', 'run', 'band', '-i', model_file_name, '-stu', structure_file_name, '-o', 'band_running']
+        result = sp.run(cmd, cwd=temp_dir, capture_output=True, text=True)
+        
+        if result.returncode != 0:
+            raise RuntimeError(f"dptb execution failed:\n{result.stderr}")
 
-    sp.run(['dptb', 'run', 'band', '-i', model_file_name, '-stu', structure_file_name, '-o', 'band_running'])
+        img_path = temp_path / 'band_running' / 'results' / 'band.png'
+        if not img_path.exists():
+             raise RuntimeError("Band calculation finished but no image generated.")
 
-    plt.figure(figsize=(10, 8))
-    img = mpimg.imread('./band_running/results/band.png')
-    plt.imshow(img)
-    plt.axis('off')
-    plt.savefig(os.path.join(work_path, "band.png"))
+        plt.figure(figsize=(10, 8))
+        img = mpimg.imread(str(img_path))
+        plt.imshow(img)
+        plt.axis('off')
+        output_img_path = work_dir / "band.png"
+        plt.savefig(output_img_path)
+        plt.close()
 
-    return {"band_path": str(Path(work_path).absolute())}
+    return {"band_path": str(work_dir)}

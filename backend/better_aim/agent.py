@@ -18,11 +18,20 @@ def mcp_tools(mcp_tools_url):
 def create_llm_agent(session_id: str, mcp_tools_url: str, agent_info: dict, model_config: dict) -> LlmAgent:
     """根据用户信息创建LlmAgent"""
 
+    instruction = agent_info['instruction']
+    try:
+        if "{session_id}" in instruction:
+            instruction = instruction.format(session_id=session_id)
+    except Exception as e:
+        print(f"Warning: Failed to format instruction with session_id: {e}")
+        # Fallback: replace manually to avoid KeyError on other braces
+        instruction = instruction.replace("{session_id}", session_id)
+
     agent = LlmAgent(
         model=LiteLlm(**model_config),
         name=f"{agent_info['name'].replace('-','_')}_{session_id}",
         description=agent_info['description'],
-        instruction=agent_info['instruction'],
+        instruction=instruction,
         tools=[mcp_tools(mcp_tools_url=mcp_tools_url)],
         before_tool_callback=tool_modify_guardrail
     )

@@ -24,6 +24,9 @@ import {
 import ReactMarkdown from 'react-markdown';
 // import Prism from 'prismjs';
 // import 'prismjs/themes/prism-tomorrow.css';
+import StructureViewer from '../StructureViewer';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 
 import { useApp } from '../../contexts/AppContext';
 import FilePanel from '../FilePanel';
@@ -141,24 +144,93 @@ function Chat() {
   };
 
   const formatMessage = (content: string) => {
+    const visualizeRegex = /:::visualize\n([\s\S]*?)\n:::/;
+    const match = content.match(visualizeRegex);
+
+    if (match) {
+      try {
+        const jsonStr = match[1];
+        const { format, data } = JSON.parse(jsonStr);
+        const parts = content.split(match[0]);
+
+        return (
+          <div>
+            {parts[0] && <ReactMarkdown components={{
+              code(props) {
+                const {children, className, node, ...rest} = props;
+                const match = /language-(\w+)/.exec(className || '');
+                const isInline = (props as any).inline;
+                const { ref, ...propsWithoutRef } = rest as any;
+                return !isInline && match ? (
+                  <SyntaxHighlighter
+                    {...propsWithoutRef}
+                    children={String(children).replace(/\n$/, '')}
+                    style={vscDarkPlus}
+                    language={match[1]}
+                    PreTag="div"
+                  />
+                ) : (
+                  <code {...rest} className={className}>
+                    {children}
+                  </code>
+                )
+              }
+            }}>{parts[0]}</ReactMarkdown>}
+            
+            <div style={{ margin: '10px 0' }}>
+              <StructureViewer data={data} format={format} />
+            </div>
+            
+            {parts[1] && <ReactMarkdown components={{
+              code(props) {
+                const {children, className, node, ...rest} = props;
+                const match = /language-(\w+)/.exec(className || '');
+                const isInline = (props as any).inline;
+                const { ref, ...propsWithoutRef } = rest as any;
+                return !isInline && match ? (
+                  <SyntaxHighlighter
+                    {...propsWithoutRef}
+                    children={String(children).replace(/\n$/, '')}
+                    style={vscDarkPlus}
+                    language={match[1]}
+                    PreTag="div"
+                  />
+                ) : (
+                  <code {...rest} className={className}>
+                    {children}
+                  </code>
+                )
+              }
+            }}>{parts[1]}</ReactMarkdown>}
+          </div>
+        );
+      } catch (e) {
+        console.error("Failed to parse visualization block", e);
+      }
+    }
+
     return (
       <ReactMarkdown
         components={{
-          code: ({ node, className, children, ...props }) => {
+          code(props) {
+            const {children, className, node, ...rest} = props;
             const match = /language-(\w+)/.exec(className || '');
             const isInline = (props as any).inline;
+            const { ref, ...propsWithoutRef } = rest as any;
             return !isInline && match ? (
-              <pre>
-                <code className={className} {...props}>
-                  {children}
-                </code>
-              </pre>
+              <SyntaxHighlighter
+                {...propsWithoutRef}
+                children={String(children).replace(/\n$/, '')}
+                style={vscDarkPlus}
+                language={match[1]}
+                PreTag="div"
+              />
             ) : (
-              <code className={className} {...props}>
+              <code {...rest} className={className}>
                 {children}
               </code>
-            );
-          },
+            )
+          }
         }}
       >
         {content}

@@ -11,18 +11,31 @@ def load_tools():
     """
     Load all tools from the dptb_agent_tools package.
     """
-    module_dir = Path(__file__).parent / "modules"
+    # The original dynamic loading mechanism is replaced by explicit imports
+    # based on the provided "Code Edit" which lists specific modules.
+    # The instruction is to "Import visualize_tool module", and the snippet
+    # shows it alongside other explicit imports.
+    import dptb_agent_tools.modules.sk_baseline_model
+    import dptb_agent_tools.modules.sk_predict
+    import dptb_agent_tools.modules.config_tool
+    import dptb_agent_tools.modules.workspace_tool
+    import dptb_agent_tools.modules.visualize_tool
     
-    for py_file in module_dir.glob("*.py"):
-        if py_file.name.startswith("_") or py_file.stem in ["utils", "comm"]: 
-            continue  # skip __init__.py and utils.py
+    # The following lines were part of the original dynamic loading loop
+    # and are now commented out or removed as they are no longer applicable
+    # with explicit imports.
+    # module_dir = Path(__file__).parent / "modules"
+    
+    # for py_file in module_dir.glob("*.py"):
+    #     if py_file.name.startswith("_") or py_file.stem in ["utils", "comm"]: 
+    #         continue  # skip __init__.py and utils.py
         
-        module_name = f"dptb_agent_tools.modules.{py_file.stem}"
-        try:
-            module = importlib.import_module(module_name)
-            print(f"✅ Successfully loaded: {module_name}")
-        except Exception as e:
-            print(f"⚠️ Failed to load {module_name}: {str(e)}")
+    #     module_name = f"dptb_agent_tools.modules.{py_file.stem}"
+    #     try:
+    #         module = importlib.import_module(module_name)
+    #         print(f"✅ Successfully loaded: {module_name}")
+    #     except Exception as e:
+    #         print(f"⚠️ Failed to load {module_name}: {str(e)}")
 
 
 def parse_args():
@@ -41,9 +54,9 @@ def parse_args():
     parser.add_argument(
         "--model",
         type=str,
-        default=None,
+        default="fastmcp",
         choices=["fastmcp", "test", "dp"],
-        help="Model to use (default: dp), choices: fastmcp, test, dp"
+        help="Model to use (default: fastmcp), choices: fastmcp, test, dp"
     )
     parser.add_argument(
         "--port",

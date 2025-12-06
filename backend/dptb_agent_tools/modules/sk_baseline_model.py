@@ -39,19 +39,46 @@ def band_with_baseline_model(
     """
 
     assert structure_file_name != "your_structure_file_name", "输入的结构必须输入"
+    
+    # Resolve absolute paths
+    work_dir = Path(work_path).absolute()
+    structure_path = work_dir / structure_file_name
+    
+    if not structure_path.exists():
+        raise FileNotFoundError(f"Structure file not found: {structure_path}")
 
-    os.makedirs("/tmp/running", exist_ok=True)
-    os.chdir("/tmp/running")
+    import tempfile
+    import shutil
+    
+    # Use a temporary directory for execution
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_path = Path(temp_dir)
+        
+        # Copy structure file to temp dir
+        shutil.copy(structure_path, temp_path / structure_file_name)
+        
+        # Run dptb command in temp dir
+        cmd = ['dptb', 'run', 'band', '-i', basemodel, '-stu', structure_file_name, '-o', 'band_running']
+        result = sp.run(cmd, cwd=temp_dir, capture_output=True, text=True)
+        
+        if result.returncode != 0:
+            raise RuntimeError(f"dptb execution failed:\n{result.stderr}")
+            
+        # Check if result image exists
+        img_path = temp_path / 'band_running' / 'results' / 'band.png'
+        if not img_path.exists():
+             raise RuntimeError("Band calculation finished but no image generated.")
+             
+        # Copy result back to work_path
+        plt.figure(figsize=(10, 8))
+        img = mpimg.imread(str(img_path))
+        plt.imshow(img)
+        plt.axis('off')
+        output_img_path = work_dir / "band.png"
+        plt.savefig(output_img_path)
+        plt.close() # Close figure to free memory
 
-    sp.run(['dptb', 'run', 'band', '-i', basemodel, '-stu', os.path.join(work_path, structure_file_name), '-o', 'band_running'])
-
-    plt.figure(figsize=(10, 8))
-    img = mpimg.imread('/tmp/running/band_running/results/band.png')
-    plt.imshow(img)
-    plt.axis('off')
-    plt.savefig(os.path.join(work_path, "band.png"))
-
-    return {"band_path": str(Path(work_path).absolute())}
+    return {"band_path": str(work_dir)}
 
 @mcp.tool()
 def generate_sk_baseline_model(
