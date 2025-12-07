@@ -101,6 +101,10 @@ dptb-pilot
 
 The application should automatically open in your browser at `http://localhost:50001`.
 
+## 📚 Documentation
+
+*   [**Usage Guide**](docs/USAGE.md): Detailed instructions on how to use the chat, file management, and visualization features.
+
 ## ⚠️ Troubleshooting
 
 ### Proxy Issues
