@@ -135,11 +135,9 @@ function Login() {
               }} 
             />
           </div>
-          <Title level={2} style={{ margin: '0', color: '#cffafe', fontWeight: 'bold', fontSize: '24px', letterSpacing: '0.05em', textTransform: 'uppercase' }}>
-            DeepTB Pilot
-          </Title>
-          <Paragraph style={{ color: '#0e7490', margin: '4px 0 0 0', fontSize: '12px', letterSpacing: '0.1em', textTransform: 'uppercase' }}>
-            System Access Terminal
+
+          <Paragraph style={{ color: '#0e7490', margin: '4px 0 0 0', fontSize: '10px', letterSpacing: '0.25em', textTransform: 'uppercase', fontWeight: 500 }}>
+            // AI AGENT FOR DEEPTB //
           </Paragraph>
         </div>
 
@@ -167,43 +165,26 @@ function Login() {
           size="large"
         >
           <Form.Item
-            label={<span style={{ color: '#22d3ee', fontSize: '12px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.1em' }}>Session ID / 会话 ID</span>}
+            label={<span style={{ color: '#22d3ee', fontSize: '10px', fontWeight: 500, fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: '0.1em', opacity: 0.8 }}>&gt; ENTER SESSION_KEY</span>}
             name="session_id"
+            required={false}
             rules={[
               { required: true, message: 'Please enter Session ID' },
               { len: 32, message: 'Session ID must be 32 characters' }
             ]}
             style={{ marginBottom: '32px' }}
           >
-            <div style={{ position: 'relative' }}>
+            <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+              <KeyOutlined style={{ 
+                position: 'absolute', 
+                left: '16px', 
+                zIndex: 1, 
+                color: '#0e7490',
+                fontSize: '16px'
+              }} />
+              
               <Input
                 placeholder="ENTER 32-CHAR ID"
-                prefix={<KeyOutlined style={{ color: '#0e7490' }} />}
-                suffix={
-                  <Button
-                    type="text"
-                    onClick={handleGenerateRandom}
-                    style={{
-                      color: '#22d3ee', // cyan-400
-                      fontSize: '12px',
-                      fontWeight: 600,
-                      padding: '4px 8px',
-                      height: 'auto',
-                      border: '1px solid rgba(34, 211, 238, 0.3)',
-                      background: 'rgba(6, 182, 212, 0.1)'
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.background = 'rgba(6, 182, 212, 0.2)';
-                      e.currentTarget.style.boxShadow = '0 0 8px rgba(34, 211, 238, 0.4)';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.background = 'rgba(6, 182, 212, 0.1)';
-                      e.currentTarget.style.boxShadow = 'none';
-                    }}
-                  >
-                    GENERATE
-                  </Button>
-                }
                 value={sessionId}
                 onChange={handleSessionIdChange}
                 style={{ 
@@ -212,13 +193,43 @@ function Login() {
                   borderBottom: '1px solid rgba(6, 182, 212, 0.5)', // cyan-500/50
                   color: '#cffafe', // cyan-100
                   fontFamily: 'monospace',
-                  fontSize: '14px',
+                  fontSize: '13px',
                   height: '48px',
                   borderRadius: '4px 4px 0 0',
-                  letterSpacing: '0.05em'
+                  letterSpacing: '0.02em',
+                  textAlign: 'center',
+                  paddingLeft: '40px',
+                  paddingRight: '90px'
                 }}
                 className="login-input"
               />
+
+              <Button
+                type="text"
+                onClick={handleGenerateRandom}
+                style={{
+                  position: 'absolute',
+                  right: '8px',
+                  zIndex: 1,
+                  color: '#22d3ee', // cyan-400
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  padding: '4px 8px',
+                  height: 'auto',
+                  border: '1px solid rgba(34, 211, 238, 0.3)',
+                  background: 'rgba(6, 182, 212, 0.1)'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = 'rgba(6, 182, 212, 0.2)';
+                  e.currentTarget.style.boxShadow = '0 0 8px rgba(34, 211, 238, 0.4)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'rgba(6, 182, 212, 0.1)';
+                  e.currentTarget.style.boxShadow = 'none';
+                }}
+              >
+                GENERATE
+              </Button>
             </div>
             <div style={{ marginTop: '8px', textAlign: 'center' }}>
               <Text style={{ color: '#0e7490', fontSize: '10px', letterSpacing: '0.05em' }}>
