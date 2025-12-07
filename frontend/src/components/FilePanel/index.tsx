@@ -87,17 +87,11 @@ function FilePanel() {
   };
 
   const handleDelete = async (file: FileInfo) => {
-    // 目前后端API似乎没有提供删除单个文件的接口，或者我没看到
-    // 暂时显示一个提示
-    message.info('暂不支持删除文件功能');
-    
-    // 如果有API支持:
-    // try {
-    //   await actions.deleteFile(file.name);
-    //   message.success('文件已删除');
-    // } catch (error) {
-    //   message.error('删除失败');
-    // }
+    try {
+      await actions.deleteFile(file.name);
+    } catch (error) {
+      // Error is handled in AppContext
+    }
   };
 
   // 对文件进行分类
@@ -228,7 +222,7 @@ function FilePanel() {
             <Spin />
           </div>
         ) : (state.files && state.files.length > 0) ? (
-          <Collapse defaultActiveKey={['structures', 'images', 'configs', 'others']} ghost size="small">
+          <Collapse ghost size="small">
             {groupedFiles.structures.length > 0 && (
               <Panel header={<span style={{fontWeight: 'bold'}}>⚛️ 结构文件 ({groupedFiles.structures.length})</span>} key="structures">
                 {renderFileList(groupedFiles.structures)}

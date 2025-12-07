@@ -132,12 +132,20 @@ export const apiService = {
       formData.append('files', file);
     });
 
-    const response = await api.post(`/upload/${sessionId}`, formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
+    const response = await fetch(`${API_BASE_URL}/upload/${sessionId}`, {
+      method: 'POST',
+      body: formData,
     });
-    return response.data;
+    if (!response.ok) throw new Error('Failed to upload files');
+    return response.json();
+  },
+
+  async deleteFile(sessionId: string, filename: string): Promise<void> {
+    const response = await fetch(`${API_BASE_URL}/files/${sessionId}/${filename}`, {
+      method: 'DELETE',
+    });
+    if (!response.ok) throw new Error('Failed to delete file');
+    return response.json();
   },
 
   // 下载文件

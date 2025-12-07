@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useReducer, ReactNode, useEffect } from 'react';
 import { AppState, CurrentChatSession, ChatSession, ChatMessage, FileInfo, ExecutionMode, ModifyMode } from '../types';
 import { apiService, wsService } from '../services/api';
+import { message } from 'antd';
 
 // Action类型定义
 type AppAction =
@@ -166,6 +167,7 @@ const AppContext = createContext<{
     loadChatHistory: () => Promise<void>;
     loadFiles: () => Promise<void>;
     uploadFiles: (files: File[]) => Promise<void>;
+    deleteFile: (filename: string) => Promise<void>;
     clearCurrentChatHistory: () => Promise<void>;
     createNewChatSession: (userId?: string) => Promise<ChatSession | undefined>;
     switchToChatSession: (chatId: string) => Promise<void>;
@@ -570,6 +572,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
         await actions.loadFiles(); // 重新加载文件列表
       } catch (error) {
         dispatch({ type: 'SET_ERROR', payload: error instanceof Error ? error.message : '文件上传失败' });
+      } finally {
+        dispatch({ type: 'SET_LOADING', payload: false });
+      }
+    },
+
+    deleteFile: async (filename: string) => {
+      if (!state.userId) return;
+
+      try {
+        dispatch({ type: 'SET_LOADING', payload: true });
+        await apiService.deleteFile(state.userId, filename);
+        message.success('文件已删除');
+        await actions.loadFiles(); // 重新加载文件列表
+      } catch (error) {
+        dispatch({ type: 'SET_ERROR', payload: error instanceof Error ? error.message : '删除文件失败' });
+        message.error('删除文件失败');
       } finally {
         dispatch({ type: 'SET_LOADING', payload: false });
       }

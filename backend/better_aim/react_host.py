@@ -413,6 +413,20 @@ async def download_file(session_id: str, filename: str):
 
     return FileResponse(file_path, filename=filename)
 
+@app.delete("/api/files/{session_id}/{filename}")
+async def delete_file(session_id: str, filename: str):
+    """删除文件"""
+    file_path = os.path.join(work_path, session_id, "files", filename)
+
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="文件不存在")
+
+    try:
+        os.remove(file_path)
+        return {"message": "文件已删除", "filename": filename}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"删除文件失败: {str(e)}")
+
 
 @app.get("/api/sessions/{session_id}/history")
 async def get_chat_history(session_id: str):
