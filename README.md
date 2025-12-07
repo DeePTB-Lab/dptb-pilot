@@ -1,93 +1,113 @@
-# DPTB Pilot
+<div align="center">
+  <img src="frontend/public/pilot_logo_black.png" alt="DeepTB Pilot Logo" width="500"/>
+  <h3>AI Agent for DeepTB</h3>
+  <p>An intelligent copilot for the DeePTB software package, integrating LLM capabilities with material science tools.</p>
+</div>
 
-DPTB Pilot 是一个集成了 AI Agent 和 DeePTB 工具的智能辅助系统。本项目包含前端 React 应用和后端 Python 服务。
+---
 
-## 目录结构
+## 📖 Introduction
 
-*   `frontend/`: React 前端应用
-*   `backend/`: Python 后端服务
-    *   `better_aim/`: 主应用逻辑和 API 服务
-    *   `dptb_agent_tools/`: MCP 工具集合
+**DeepTB Pilot** is a sophisticated AI agent designed to assist researchers in using the DeepTB software. It combines a React-based frontend with a Python backend powered by LLMs and the Model Context Protocol (MCP).
 
-## 配置
+### ✨ Key Features
 
-```env
-# LLM Configuration
-LLM_MODEL=XXX
-LLM_API_BASE= XXX
-LLM_API_KEY=your_actual_api_key_here
+*   **Interactive Chat**: Natural language interface to query DeepTB knowledge and perform tasks.
+*   **RAG System**: Retrieval-Augmented Generation for accurate answers based on DeepTB documentation.
+*   **Structure Visualization**: Interactive 3D visualization of crystal structures and Brillouin zones.
+*   **MCP Tools**: Extensible tool system for file operations, materials search (Materials Project), and DeepTB calculations.
+*   **Session Management**: Persistent chat sessions and history.
 
-# Server Configuration
-HOST=0.0.0.0
-PORT=8000
-FRONTEND_HOST=0.0.0.0
-FRONTEND_PORT=50001
-BACKEND_HOST=localhost
-MCP_TOOLS_PORT=50002
-MCP_TOOLS_URL=http://localhost:${MCP_TOOLS_PORT}/sse
+## 🛠️ Architecture
+
+*   **Frontend**: React, Ant Design, 3Dmol.js (located in `frontend/`)
+*   **Backend**: Python, LiteLLM, MCP, Bohr Agent SDK (located in `backend/`)
+    *   `better_aim/`: Main application logic and API server.
+    *   `dptb_agent_tools/`: Collection of MCP tools.
+
+## 🚀 Getting Started
+
+### Prerequisites
+
+*   **Python 3.10+**
+*   **Node.js & npm**
+*   **Git**
+
+### 1. Installation
+
+Clone the repository and install the package in editable mode:
+
+```bash
+git clone https://github.com/deepmodeling/dptb-pilot.git
+cd dptb-pilot
+
+# Create and activate a virtual environment (recommended)
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# Install dependencies
+pip install -e .
 ```
 
-## 快速开始
+### 2. Configuration
 
-要运行整个系统，你需要打开两个终端窗口，分别启动 **MCP 工具服务** 和 **主应用**。
-
-### 前置条件
-
-*   Python 3.10+
-*   Node.js & npm
-*   已激活 Python 虚拟环境 (推荐: `pybaim`)
-
-### 3. 配置环境变量
-
-复制 `env.example` 到 `.env` 并修改配置：
+Copy the example environment file and configure your settings:
 
 ```bash
 cp env.example .env
 ```
 
-主要配置项：
-- `LLM_API_KEY`: 您的 LLM API 密钥
-- `WORK_ROOT`: 工作区根目录 (默认: 当前目录)
-- `PORT`: 后端服务端口 (默认: 8000)
-- `FRONTEND_PORT`: 前端服务端口 (默认: 50001)。
+Edit `.env` with your API keys and preferences:
 
-### 步骤 2: 启动服务
+```env
+# LLM Configuration
+LLM_MODEL=openai/gpt-4o  # or your preferred model
+LLM_API_BASE=https://api.openai.com/v1
+LLM_API_KEY=your_actual_api_key_here
 
-您需要打开两个终端窗口。
+# Materials Project API (Optional)
+MP_API_KEY=your_mp_api_key_here
 
-**终端 1: 启动 MCP 工具服务**
+# Server Configuration
+HOST=0.0.0.0
+PORT=8000
+FRONTEND_PORT=50001
+```
+
+### 3. Running the Application
+
+You need to start two services: the **MCP Tool Server** and the **Main Pilot Application**.
+
+**Terminal 1: Start MCP Tools**
 
 ```bash
 dptb-tools
 ```
 
-**终端 2: 启动主应用**
+**Terminal 2: Start Pilot App**
 
 ```bash
 dptb-pilot
 ```
 
-启动成功后，会自动尝试打开浏览器。
+The application should automatically open in your browser at `http://localhost:50001`.
 
-## 注意事项
+## ⚠️ Troubleshooting
 
-### 代理设置 (VPN)
+### Proxy Issues
 
-如果您开启了 VPN 或系统代理，可能会导致无法连接到 `localhost` 或 `127.0.0.1`。此时请设置 `NO_PROXY` 环境变量：
+If you are behind a proxy or VPN and cannot connect to `localhost`, set the `NO_PROXY` environment variable:
 
 ```bash
 export NO_PROXY="localhost,127.0.0.1"
 ```
 
-或者在启动命令前加上：
+Or run the commands with the variable prepended:
 
 ```bash
 NO_PROXY="localhost,127.0.0.1" dptb-pilot
 ```
 
-## 访问地址
+## 📄 License
 
-*   **前端界面**: [http://0.0.0.0:50001](http://0.0.0.0:50001) (主要访问入口)
-*   **后端 API**: http://0.0.0.0:8000
-*   **MCP 工具**: http://localhost:50002/sse
-source /Users/aisiqg/Software/venv/pybaim/bin/activate && pip uninstall -y dptb_pilot_backend better_aim dptb_agent_tools && pip install -e .
+[License Information]
