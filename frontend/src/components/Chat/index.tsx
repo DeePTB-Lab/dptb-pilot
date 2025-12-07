@@ -186,6 +186,9 @@ function Chat() {
                     {children}
                   </code>
                 )
+              },
+              img(props) {
+                return <img {...props} style={{ maxWidth: '100%', borderRadius: '8px' }} />;
               }
             }}>{parts[0]}</ReactMarkdown>}
             
@@ -212,6 +215,9 @@ function Chat() {
                     {children}
                   </code>
                 )
+              },
+              img(props) {
+                return <img {...props} style={{ maxWidth: '100%', borderRadius: '8px' }} />;
               }
             }}>{parts[1]}</ReactMarkdown>}
           </div>
@@ -242,6 +248,9 @@ function Chat() {
                 {children}
               </code>
             )
+          },
+          img(props) {
+            return <img {...props} style={{ maxWidth: '100%', borderRadius: '8px' }} />;
           }
         }}
       >
