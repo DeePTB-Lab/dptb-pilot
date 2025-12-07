@@ -4,7 +4,7 @@ export const translations = {
     newChat: '新建对话',
     clearChat: '清空对话',
     logout: '退出登录',
-    inputPlaceholder: '向 DeepTB 提问有关材料的问题...',
+    inputPlaceholder: '向 DeePTB 提问有关材料的问题...',
     uploadSuccess: '上传成功',
     uploadFailed: '上传失败',
     sendFailed: '发送失败',
@@ -12,7 +12,7 @@ export const translations = {
     clearFailed: '清空失败',
     loginRequired: '请先登录',
     fileSizeLimit: '文件大小不能超过10MB',
-    welcomeTitle: 'DeepTB-Pilot 助手',
+    welcomeTitle: 'DeePTB-Pilot 助手',
     welcomeSubtitle: '您的智能材料计算助手',
     
     // Shortcuts
@@ -21,7 +21,7 @@ export const translations = {
     calculateBands: '计算能带',
     calculateBandsDesc: '计算并绘制能带图',
     generateConfigs: '生成配置',
-    generateConfigsDesc: '生成DeepTB训练配置',
+    generateConfigsDesc: '生成DeePTB训练配置',
     searchMaterials: '搜索材料',
     searchMaterialsDesc: '搜索数据库材料',
 
@@ -77,7 +77,7 @@ export const translations = {
     newChat: 'New Chat',
     clearChat: 'Clear Chat',
     logout: 'Logout',
-    inputPlaceholder: 'Ask DeepTB about materials...',
+    inputPlaceholder: 'Ask DeePTB about materials...',
     uploadSuccess: 'Upload successful',
     uploadFailed: 'Upload failed',
     sendFailed: 'Failed to send message',
@@ -85,7 +85,7 @@ export const translations = {
     clearFailed: 'Failed to clear history',
     loginRequired: 'Please login first',
     fileSizeLimit: 'File size cannot exceed 10MB',
-    welcomeTitle: 'DeepTB-Pilot',
+    welcomeTitle: 'DeePTB-Pilot',
     welcomeSubtitle: 'Your AI Assistant for Materials Calculation',
 
     // Shortcuts
@@ -94,7 +94,7 @@ export const translations = {
     calculateBands: 'Calculate Bands',
     calculateBandsDesc: 'Calculate band structures',
     generateConfigs: 'Generate Configs',
-    generateConfigsDesc: 'Generate DeepTB configs',
+    generateConfigsDesc: 'Generate DeePTB configs',
     searchMaterials: 'Search Materials',
     searchMaterialsDesc: 'Search materials database',
 
