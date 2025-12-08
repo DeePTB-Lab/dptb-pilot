@@ -40,7 +40,7 @@
 Clone the repository and install the package in editable mode:
 
 ```bash
-git clone https://github.com/deepmodeling/dptb-pilot.git
+git clone https://github.com/DeePTB-Lab/dptb-pilot.git
 cd dptb-pilot
 
 # Create and activate a virtual environment (recommended)
