@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="frontend/public/pilot_logo_black.png" alt="DeePTB Pilot Logo" width="500"/>
+  <img src="web_ui/public/pilot_logo_black.png" alt="DeePTB Pilot Logo" width="500"/>
   <h3>AI Agent for DeePTB</h3>
   <p>An intelligent copilot for the DeePTB software package, integrating LLM capabilities with material science tools.</p>
 </div>
