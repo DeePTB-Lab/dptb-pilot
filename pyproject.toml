@@ -3,9 +3,9 @@ requires = ["setuptools>=45", "setuptools_scm>=6.2"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "dptb_pilot_backend"
+name = "dptb_pilot"
 version = "0.1.0"
-description = "Unified backend for dptb-pilot"
+description = "Unified AI Pilot for DeePTB"
 requires-python = ">=3.10"
 dependencies = [
     "LiteLlm",
@@ -25,17 +25,13 @@ dependencies = [
 ]
 
 [project.scripts]
-dptb-pilot = "better_aim.react_main:main"
-dptb-tools = "dptb_agent_tools.main:main"
+dptb-pilot = "dptb_pilot.main:main"
+dptb-tools = "dptb_pilot.tools.server:main"
 
 [tool.setuptools]
-package-dir = { "" = "backend" }
-
-[tool.setuptools.packages.find]
-where = ["backend"]
-include = ["better_aim*", "dptb_agent_tools*"]
+packages = ["dptb_pilot", "dptb_pilot.core", "dptb_pilot.server", "dptb_pilot.tools", "dptb_pilot.tools.modules"]
 
 [tool.pytest.ini_options]
-pythonpath = ["backend"]
+pythonpath = ["."]
 testpaths = ["tests"]
 addopts = "-v"

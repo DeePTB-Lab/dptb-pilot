@@ -35,11 +35,11 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 .npm/
-frontend/dist/
-frontend/.env.local
-frontend/.env.development.local
-frontend/.env.test.local
-frontend/.env.production.local
+web_ui/dist/
+web_ui/.env.local
+web_ui/.env.development.local
+web_ui/.env.test.local
+web_ui/.env.production.local
 
 # IDEs
 .idea/
@@ -49,9 +49,22 @@ frontend/.env.production.local
 .DS_Store
 
 # Project specific
-backend/dptb_agent_tools/env.json
+dptb_pilot/tools/env.json
 chat_history/
 /tmp/
 temp/
 workspace/
-backend/dptb_agent_tools/data/deeptb_knowledge/repo/
+
+# Session data
+workspace/*/
+workspace/**/files/
+workspace/**/sessions.json
+
+# Test artifacts
+.pytest_cache/
+*.egg-info/
+reproduce_*.py
+
+# Logs and temporary files
+*.log
+*.tmp

@@ -20,10 +20,11 @@
 
 ## 🛠️ Architecture
 
-*   **Frontend**: React, Ant Design, 3Dmol.js (located in `frontend/`)
-*   **Backend**: Python, LiteLLM, MCP, Bohr Agent SDK (located in `backend/`)
-    *   `better_aim/`: Main application logic and API server.
-    *   `dptb_agent_tools/`: Collection of MCP tools.
+*   **Frontend**: React, Ant Design, 3Dmol.js (located in `web_ui/`)
+*   **Backend**: Python, LiteLLM, MCP, Bohr Agent SDK (located in `dptb_pilot/`)
+    *   `core/`: Core agent logic.
+    *   `server/`: API Server.
+    *   `tools/`: Collection of MCP tools.
 
 ## 🚀 Getting Started
 
