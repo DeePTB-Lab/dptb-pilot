@@ -626,10 +626,15 @@ def configure_static_serving():
     from fastapi.responses import FileResponse
 
     # 尝试找到dist目录
+    # app.py path: .../dptb-pilot/dptb_pilot/server/app.py
+    # web_ui path: .../dptb-pilot/web_ui
+    server_dir = os.path.dirname(__file__)
+    pilot_pkg_dir = os.path.dirname(server_dir)
+    project_root = os.path.dirname(pilot_pkg_dir)
+
     possible_paths = [
-        os.path.join(os.path.dirname(os.path.dirname(__file__)), "web_ui", "dist"), # dptb_pilot/../web_ui/dist
-        os.path.join(os.getcwd(), "web_ui", "dist"),
-        os.path.join(work_path, "web_ui", "dist")
+        os.path.join(project_root, "web_ui", "dist"), # Best for packaged/repo run
+        os.path.join(os.getcwd(), "web_ui", "dist"),  # Best for local dev in root
     ]
     
     dist_path = None

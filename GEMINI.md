@@ -76,22 +76,28 @@ dptb-pilot
 
 The application will be available at `http://localhost:50001`.
 
-### Frontend Development
+### 4. Running from Anywhere (Recommended)
 
-To run the frontend development server independently for UI development:
+To run the tools from any directory (not just the project root), creating aliases is recommended. The `./install.sh` script provides these for you.
 
-```bash
-cd web_ui
-npm install
-npm run dev
-```
-
-To build the frontend for production:
+Add the following to your `~/.zshrc` or `~/.bashrc` (replace `/path/to/dptb-pilot` with your actual path):
 
 ```bash
-cd web_ui
-npm run build
+alias dptb-pilot='uv run --project /absolute/path/to/dptb-pilot dptb-pilot'
+alias dptb-tools='uv run --project /absolute/path/to/dptb-pilot dptb-tools'
 ```
+
+Then you can simply run:
+
+```bash
+# Terminal 1
+dptb-tools
+
+# Terminal 2
+dptb-pilot
+```
+
+The application will automatically find the configuration (`.env`) from your current working directory, or fall back to system environment variables.
 
 ## Development Conventions
 

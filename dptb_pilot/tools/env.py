@@ -97,6 +97,7 @@ def set_envs(transport_input=None, model_input=None, port_input=None, host_input
         )
     return envjson
     
+def create_workpath():
     """
     Create the working directory for dptb agent, and change the current working directory to it.
     

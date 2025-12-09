@@ -87,3 +87,15 @@ echo ""
 echo "🎉 All Done! You are ready to go."
 echo ""
 
+echo "======================================"
+echo "🌍 Run dptb-pilot from ANYWHERE"
+echo "======================================"
+
+PROJECT_ROOT=$(pwd)
+
+echo "Add these aliases to your shell config (e.g., ~/.zshrc or ~/.bashrc):"
+echo ""
+echo "alias pilot='uv run --project $PROJECT_ROOT dptb-pilot'"
+echo "alias tools='uv run --project $PROJECT_ROOT dptb-tools'"
+
+echo ""
