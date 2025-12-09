@@ -616,6 +616,58 @@ def initialize_server(
         logger.error(f"⚠️  加载MCP工具失败: {e}")
         tools_info = []
 
+    # 配置静态文件服务 (如果在生产环境且存在dist)
+    configure_static_serving()
+
+
+def configure_static_serving():
+    """配置前端静态文件服务"""
+    from fastapi.staticfiles import StaticFiles
+    from fastapi.responses import FileResponse
+
+    # 尝试找到dist目录
+    possible_paths = [
+        os.path.join(os.path.dirname(os.path.dirname(__file__)), "web_ui", "dist"), # dptb_pilot/../web_ui/dist
+        os.path.join(os.getcwd(), "web_ui", "dist"),
+        os.path.join(work_path, "web_ui", "dist")
+    ]
+    
+    dist_path = None
+    for path in possible_paths:
+        if os.path.exists(path) and os.path.exists(os.path.join(path, "index.html")):
+            dist_path = path
+            break
+            
+    if dist_path:
+        logger.info(f"🎨 启用静态文件托管: {dist_path}")
+        
+        # 1. Mount assets
+        assets_path = os.path.join(dist_path, "assets")
+        if os.path.exists(assets_path):
+            app.mount("/assets", StaticFiles(directory=assets_path), name="assets")
+            
+        # 2. Mount other static folders if needed (e.g. vite creates assets, maybe others?)
+        # For safety, we can mount root, but it might shadow API.
+        
+        # 3. Catch-all route for SPA (Must be last)
+        @app.get("/{full_path:path}")
+        async def serve_spa(full_path: str):
+            # API和WebSocket已经被前面的路由捕获，这里只处理前端路由
+            if full_path.startswith("api/") or full_path.startswith("ws/"):
+                raise HTTPException(status_code=404, detail="Not Found")
+            
+            # Check if file exists in dist (e.g. favicon.ico)
+            file_path = os.path.join(dist_path, full_path)
+            if os.path.isfile(file_path):
+                 return FileResponse(file_path)
+                 
+            # 否则返回index.html (SPA路由)
+            return FileResponse(os.path.join(dist_path, "index.html"))
+            
+        logger.info("✅ 前端静态服务已配置 (SPA Mode)")
+    else:
+        logger.info("ℹ️ 未发现前端编译产物，跳过静态服务配置 (请使用 npm run dev)")
+
 
 def run_server(host: str = "0.0.0.0", port: int = 8000):
     """运行服务器"""

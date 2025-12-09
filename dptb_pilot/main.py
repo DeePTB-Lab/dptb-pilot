@@ -87,8 +87,8 @@ def parse_arguments():
     return parser.parse_args()
 
 
-def start_frontend_server(frontend_port: int = 3000, frontend_host: str = "0.0.0.0", backend_host: str = "localhost", backend_port: int = 8000):
-    """启动前端开发服务器"""
+def start_frontend_server(frontend_port: int = 3000, frontend_host: str = "0.0.0.0", backend_host: str = "localhost", backend_port: int = 8000, debug: bool = False):
+    """启动前端开发服务器 (仅在开发模式下)"""
     # 更智能的路径查找：尝试多种可能的位置
     possible_paths = [
         # 1. Standard location: Project root/web_ui
@@ -108,6 +108,20 @@ def start_frontend_server(frontend_port: int = 3000, frontend_host: str = "0.0.0
     if frontend_path is None:
         frontend_path = possible_paths[0]  # Default
 
+    # Check for built static files
+    dist_path = os.path.join(frontend_path, "dist")
+    has_static = os.path.exists(dist_path) and os.path.exists(os.path.join(dist_path, "index.html"))
+    
+    if has_static and not debug:
+        logger.info(f"✅ 发现前端编译产物，将由后端统一托管: {dist_path}")
+        logger.info(f"🌍 访问地址: http://{backend_host}:{backend_port}")
+        
+        # 自动打开浏览器
+        if backend_host in ['localhost', '127.0.0.1', '0.0.0.0']:
+             target_url = f"http://localhost:{backend_port}"
+             threading.Timer(2, lambda: webbrowser.open(target_url)).start()
+        return True
+
     logger.debug(f"Current File: {__file__}")
     logger.debug(f"CWD: {os.getcwd()}")
     logger.debug(f"Tried paths: {possible_paths}")
@@ -117,6 +131,7 @@ def start_frontend_server(frontend_port: int = 3000, frontend_host: str = "0.0.0
         logger.error(f"前端目录不存在: {frontend_path}")
         return False
 
+    # Fallback to npm run dev
     try:
         # 检查是否已安装依赖
         node_modules = os.path.join(frontend_path, "node_modules")
@@ -140,7 +155,7 @@ def start_frontend_server(frontend_port: int = 3000, frontend_host: str = "0.0.0
                 return False
 
         # 启动开发服务器
-        logger.info(f"启动前端开发服务器...")
+        logger.info(f"启动前端开发服务器 (Dev Mode)...")
         logger.info(f"前端路径: {frontend_path}")
         logger.info(f"前端配置: {frontend_host}:{frontend_port}")
         logger.info(f"后端代理: {backend_host}:{backend_port}")
@@ -249,7 +264,7 @@ def react_launch(agent_info: Dict,
     if not no_dev:
         frontend_thread = threading.Thread(
             target=start_frontend_server,
-            args=(frontend_port, frontend_host, backend_host, port),  # frontend_port, frontend_host, backend_host, backend_port
+            args=(frontend_port, frontend_host, backend_host, port, debug),  # frontend_port, frontend_host, backend_host, backend_port, debug
             daemon=True
         )
         frontend_thread.start()
