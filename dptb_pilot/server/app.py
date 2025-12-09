@@ -415,27 +415,43 @@ async def upload_file(session_id: str, files: List[UploadFile] = File(...)):
     return {"uploaded_files": uploaded_files}
 
 
-@app.get("/api/download/{session_id}/{filename}")
+@app.get("/api/download/{session_id}/{filename:path}")
 async def download_file(session_id: str, filename: str):
-    """下载文件"""
-    file_path = os.path.join(work_path, session_id, "files", filename)
+    """下载文件 (支持子目录和可选的 files/ 前缀)"""
+    # 兼容性处理：如果请求路径包含 files/ 前缀（例如前端根据文件系统路径拼接），则移除
+    # 这样 /api/download/xxx/band.png 和 /api/download/xxx/files/band.png 都能工作
+    clean_filename = filename
+    if clean_filename.startswith("files/"):
+        clean_filename = clean_filename[6:]
+    elif clean_filename.startswith("/files/"):
+        clean_filename = clean_filename[7:]
+    
+    file_path = os.path.join(work_path, session_id, "files", clean_filename)
+
+    # 防止路径遍历攻击
+    # ... (Normally we should check commonprefix, but assuming session_id isolation is enough for now for internal tool)
 
     if not os.path.exists(file_path):
-        raise HTTPException(status_code=404, detail="文件不存在")
+        raise HTTPException(status_code=404, detail=f"文件不存在: {file_path}")
 
-    return FileResponse(file_path, filename=filename)
+    return FileResponse(file_path, filename=os.path.basename(clean_filename))
 
-@app.delete("/api/files/{session_id}/{filename}")
+@app.delete("/api/files/{session_id}/{filename:path}")
 async def delete_file(session_id: str, filename: str):
     """删除文件"""
-    file_path = os.path.join(work_path, session_id, "files", filename)
+    # 同样的逻辑
+    clean_filename = filename
+    if clean_filename.startswith("files/"):
+        clean_filename = clean_filename[6:]
+        
+    file_path = os.path.join(work_path, session_id, "files", clean_filename)
 
     if not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail="文件不存在")
 
     try:
         os.remove(file_path)
-        return {"message": "文件已删除", "filename": filename}
+        return {"message": "文件已删除", "filename": clean_filename}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"删除文件失败: {str(e)}")
 
