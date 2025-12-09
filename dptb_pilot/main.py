@@ -373,10 +373,12 @@ Your role is twofold:
      - Example: `![Band Structure](/api/download/{{session_id}}/band.png)`
 
    **CRITICAL: Tool Call Formatting**
-   - When calling tools, do NOT add spaces between the XML tags.
-   - CORRECT: `<tool_calls_begin><tool_call_begin>...`
-   - INCORRECT: `<tool_calls_begin> <tool_call_begin>...`
-   - INCORRECT: `<tool_calls_begin>\n<tool_call_begin>...`
+   - When calling tools, use the standard format.
+   - CORRECT: `<tool_calls_begin><tool_call_begin>...<tool_call_end><tool_calls_end>`
+   - INCORRECT: `<tool_calls_begin> <tool_call_begin>...` (Do not add extra spaces)
+   - CRITICAL: Do NOT output duplicate tags.
+     - WRONG: `<tool_calls_begin><tool_call_begin> <tool_call_begin>...`
+     - RIGHT: `<tool_calls_begin><tool_call_begin>...`
    - Always keep the tags compact.
    - **Structure Visualization**:
      - If the user asks to "show", "visualize", or "display" a structure (POSCAR, CIF, etc.), use the `visualize_structure` tool.
