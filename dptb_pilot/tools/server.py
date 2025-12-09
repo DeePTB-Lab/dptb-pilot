@@ -2,6 +2,7 @@ from pathlib import Path
 import importlib
 import os
 import argparse
+import sys
 from dotenv import load_dotenv
 from dptb_pilot.core.logger import get_logger
 
@@ -113,10 +114,26 @@ def main():
     Main function to run the MCP tool.
     """
     print_version()
-    if load_dotenv():
-        logger.info("✅ Environment variables loaded from .env")
+def main():
+    """
+    Main function to run the MCP tool.
+    """
+    print_version()
+    
+    # 1. 优先加载当前运行目录下的 .env
+    cwd_env = os.path.join(os.getcwd(), '.env')
+    if os.path.exists(cwd_env):
+        logger.info(f"📄 Loading .env from current directory: {cwd_env}")
+        load_dotenv(cwd_env)
     else:
-        logger.warning("⚠️ .env file not found or empty")
+        logger.info("ℹ️ No .env found in current directory, using system environment variables")
+
+    # 2. 关键参数检查
+    api_key = os.getenv("LLM_API_KEY") or os.getenv("API_KEY")
+    if not api_key:
+        logger.critical("❌ CRITICAL ERROR: API Key not found!")
+        logger.critical("Please set LLM_API_KEY in your .env file or environment variables.")
+        sys.exit(1)
         
     logger.debug(f"MCP_TOOLS_PORT: {os.getenv('MCP_TOOLS_PORT', 'Not Set (using default)')}")
     args = parse_args()  

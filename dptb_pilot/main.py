@@ -20,8 +20,8 @@ def parse_arguments():
     parser.add_argument(
         "--port", "-p",
         type=int,
-        default=int(os.getenv("PORT", 8000)),
-        help="后端API服务器端口号 (默认: 8000)"
+        default=int(os.getenv("PORT", 50003)),
+        help="后端API服务器端口号 (默认: 50003)"
     )
 
     parser.add_argument(
@@ -34,8 +34,8 @@ def parse_arguments():
     parser.add_argument(
         "--frontend-port", "-fp",
         type=int,
-        default=int(os.getenv("FRONTEND_PORT", 50001)),
-        help="前端开发服务器端口号 (默认: 50001)"
+        default=int(os.getenv("FRONTEND_PORT", 50002)),
+        help="前端开发服务器端口号 (默认: 50002)"
     )
 
     parser.add_argument(
@@ -55,8 +55,8 @@ def parse_arguments():
     parser.add_argument(
         "--mcp_tools",
         type=str,
-        default=os.getenv("MCP_TOOLS_URL", "http://localhost:50002/sse"),
-        help="MCP工具服务器链接 (默认: http://localhost:50002/sse)"
+        default=None,  # Handled dynamically
+        help="MCP工具服务器链接 (默认: http://{BACKEND_HOST}:{MCP_TOOLS_PORT}/sse)"
     )
 
     parser.add_argument(
@@ -230,8 +230,8 @@ def react_launch(agent_info: Dict,
                 work_path: str = "/tmp",
                 tools_need_modify: list = None,
                 host: str = "0.0.0.0",
-                port: int = 8000,
-                frontend_port: int = 50001,
+                port: int = 50003,
+                frontend_port: int = 50002,
                 frontend_host: str = "0.0.0.0",
                 backend_host: str = "localhost",
                 no_dev: bool = False,
@@ -288,12 +288,59 @@ def react_launch(agent_info: Dict,
 
 def main():
     """主函数"""
-    if load_dotenv():
-        logger.info("环境变量已根据`.env`文件读入")
+    # 1. 优先加载当前运行目录下的 .env
+    cwd_env = os.path.join(os.getcwd(), '.env')
+    if os.path.exists(cwd_env):
+        logger.info(f"📄 Loading .env from current directory: {cwd_env}")
+        load_dotenv(cwd_env)
     else:
-        logger.warning("未找到`.env`文件或无任何变量被读入")
+        logger.info("ℹ️ No .env found in current directory, using system environment variables")
+
+    # 2. 关键参数检查
+    api_key = os.getenv("LLM_API_KEY") or os.getenv("API_KEY")
+    if not api_key:
+        logger.critical("❌ CRITICAL ERROR: API Key not found!")
+        logger.critical("Please set LLM_API_KEY in your .env file or environment variables.")
+        logger.critical(f"Expected .env path: {cwd_env}")
+        sys.exit(1)
+
+    # 3. 建议参数检查
+    if not os.getenv("LLM_MODEL"):
+        logger.warning("⚠️ LLM_MODEL not set, using default model")
+    if not os.getenv("LLM_API_BASE"):
+        logger.warning("⚠️ LLM_API_BASE not set, using default base URL")
+    if not os.getenv("MP_API_KEY"):
+        logger.warning("⚠️ MP_API_KEY not set, Materials Project tools will not work")
+
+    # 4. 动态构建 MCP_TOOLS_URL (如果未设置)
+    # 获取相关配置 (带默认值)
+    backend_host = os.getenv("BACKEND_HOST", "localhost")
+    mcp_port = os.getenv("MCP_TOOLS_PORT", "50001")
+    
+    # 构建默认 URL
+    default_mcp_url = f"http://{backend_host}:{mcp_port}/sse"
+    
+    # 如果环境变量里设置了 MCP_TOOLS_URL，它会被 argparse 的 default 用 os.getenv 获取到
+    # 但我们需要在这里处理 "如果没设env也没传参" 的情况，或者覆盖 argparse 的默认行为？
+    # Argparse default is `os.getenv("MCP_TOOLS_URL", "http://localhost:50002/sse")`
+    # Let's override the environment variable if it's missing, so argparse picks it up?
+    # No, better to pass it explicitly to parse_args logic or handle it after.
+    
+    # 实际上 parse_arguments 里的 default 已经写死了。
+    # 我们需要在调用 parse_arguments 之前或者之后处理。
+    # 由于 parse_arguments 内部用了 os.getenv 作为 default，所以要在它之前 set env?
+    # 或者修改 parse_arguments 的逻辑。
+    
+    # Let's modify parse_arguments to use this dynamic default if env is missing.
+    if not os.getenv("MCP_TOOLS_URL"):
+        os.environ["MCP_TOOLS_URL"] = default_mcp_url
 
     args = parse_arguments()
+
+    if not args.mcp_tools:
+        args.mcp_tools = os.getenv("MCP_TOOLS_URL", default_mcp_url)
+    
+    logger.info(f"🔗 MCP Tools URL: {args.mcp_tools}")
 
     # 获取绝对路径的工作目录，以便Agent能准确找到
     abs_work_dir = os.path.abspath(args.work_dir)
