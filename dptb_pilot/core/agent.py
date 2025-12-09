@@ -24,6 +24,12 @@ def create_llm_agent(session_id: str, mcp_tools_url: str, agent_info: dict, mode
         # Use replace instead of format to avoid issues with other braces (e.g. JSON or LaTeX)
         instruction = instruction.replace("{session_id}", session_id)
 
+    # DEBUG: Print instruction to verify prompt updates
+    print("-" * 50)
+    print("DEBUG: Current Agent System Instruction:")
+    print(instruction)
+    print("-" * 50)
+
     agent = LlmAgent(
         model=LiteLlm(**model_config),
         name=f"{agent_info['name'].replace('-','_')}_{session_id}",

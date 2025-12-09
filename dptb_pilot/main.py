@@ -379,9 +379,8 @@ Your role is twofold:
    `<tool_calls_begin><tool_call_begin><tool_name>list_workspace_files</tool_name><parameters><work_path>/tmp/session_id/files</work_path></parameters><tool_call_end><tool_calls_end>`
 
    Constraints:
+   - Your output MUST be exactly one single line without any newlines or spaces between tags.
    - Start immediately with `<tool_calls_begin>`.
-   - Do NOT add spaces between tags.
-   - Do NOT double the tags (e.g. `...<tool_name>...` NOT `...<tool_name> <tool_name>...`).
    - Use `list_workspace_files` to check files before doing anything else.
    - **Structure Visualization**:
      - If the user asks to "show", "visualize", or "display" a structure (POSCAR, CIF, etc.), use the `visualize_structure` tool.
