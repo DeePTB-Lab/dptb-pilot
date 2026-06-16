@@ -38,6 +38,8 @@ def load_tools():
         band_gap,
         band_predict,
         band_predict_with_julia,
+        dos_plot,
+        dos_predict,
         hamiltonian_predict,
     )
     from dptb_pilot.tools.modules.deeptb.abacus import (
@@ -63,6 +65,7 @@ def load_tools():
         dpnegf_prepare_negf_tasks,
         dpnegf_run_lammps_task,
         dpnegf_run_negf_task,
+        dpnegf_transmission_plot,
     )
 
     # Knowledge

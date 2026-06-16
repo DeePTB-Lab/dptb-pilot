@@ -10,6 +10,7 @@ from dptb_pilot.tools.modules.dpnegf.results_unified import (
     PrepNegfTasksResult,
     RunDpnegfLammpsResult,
     RunDpnegfResult,
+    TransmissionPlotResult,
 )
 from dptb_pilot.tools.modules.dpnegf.submodules.lammps import (
     prepare_lammps_tasks,
@@ -24,6 +25,7 @@ from dptb_pilot.tools.modules.dpnegf.submodules.overlap import (
     get_abacus_overlap,
 )
 from dptb_pilot.tools.modules.dpnegf.submodules.supercell import build_supercell
+from dptb_pilot.tools.modules.dpnegf.submodules.transmission import _transmission_plot
 
 
 @mcp.tool()
@@ -143,4 +145,20 @@ def dpnegf_convert_overlap(
         running_log_path=running_log_path,
         overlap_csr_path=overlap_csr_path,
         work_path=work_path,
+    )
+
+
+@mcp.tool()
+def dpnegf_transmission_plot(
+        negf_out_path: Path,
+        label: bool = False,
+        work_path: str = ".",
+        image_name: str = None,
+) -> TransmissionPlotResult:
+    """Plot transmission spectrum from a DPNEGF ``negf.out.pth`` file."""
+    return _transmission_plot(
+        negf_out_path=negf_out_path,
+        label=label,
+        work_path=work_path,
+        image_name=image_name,
     )

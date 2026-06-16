@@ -284,6 +284,8 @@ def _band_predict(
         kmesh: str = None,
         override_overlap: Path = None,
         eig_solver: str = "numpy",
+        smearing_method: str = "FD",
+        sigma_val: float = None,
         work_path: str = "."
     ):
     """
@@ -332,7 +334,9 @@ def _band_predict(
         else:
             kmesh = [5,5,5]
         fermi_level = tbsystem.get_efermi(kmesh=kmesh,
-                                          eig_solver=eig_solver)
+                                          eig_solver=eig_solver,
+                                          smearing_method=smearing_method,
+                                          sigma_val=sigma_val)
 
         tbsystem.band.set_kpath(**kpath_config)
         band_data = tbsystem.band.compute(eig_solver=eig_solver)
@@ -545,7 +549,8 @@ def _band_compare(
         dft_result_path: Path,
         e_min: float = None,
         e_max: float = None,
-        match_efermi: bool = False
+        match_efermi: bool = False,
+        delta: float = None,
 ):
     """
     DFT 与 DeePTB 能带对比绘图
@@ -630,6 +635,8 @@ def _band_compare(
 
     if match_efermi:
         dptb_band = dptb_band - dptb_efermi
+        if delta:
+            dptb_band = dptb_band + delta
 
     # ==========================================================
     # 3. 处理维度
@@ -716,6 +723,13 @@ def _band_compare(
             linestyle="--",
             linewidth=1
         )
+        if delta:
+            plt.axhline(
+                delta,
+                linestyle="--",
+                linewidth=1,
+                label="DeePTB Shift"
+            )
     else:
         plt.axhline(
             dft_efermi,

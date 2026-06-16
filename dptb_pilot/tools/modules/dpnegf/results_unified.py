@@ -33,6 +33,10 @@ class RunDpnegfResult(TypedDict):
     task_name: str
 
 
+class TransmissionPlotResult(TypedDict):
+    transmission_plot_path: str
+
+
 class AbacusOverlapResult(TypedDict):
     stru_path: Path
     input_path: Path

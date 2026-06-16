@@ -6,6 +6,8 @@ from dptb_pilot.tools.modules.deeptb.results_unified import (
     BandCompareResult,
     BandGapResult,
     BandResult,
+    DosPlotResult,
+    DosResult,
     HamiltonianResult,
 )
 from dptb_pilot.tools.modules.deeptb.submodules.band import (
@@ -14,6 +16,7 @@ from dptb_pilot.tools.modules.deeptb.submodules.band import (
     _band_predict,
     _band_predict_with_julia,
 )
+from dptb_pilot.tools.modules.deeptb.submodules.dos import _dos_plot, _dos_predict
 from dptb_pilot.tools.modules.deeptb.submodules.hamiltonian import _hamiltonian_predict
 
 @mcp.tool()
@@ -50,6 +53,144 @@ def band_predict(
                        nel_atom=nel_atom,
                        kmesh=kmesh,
                        work_path=work_path)
+
+@mcp.tool()
+def dos_predict(
+        model_file_path: Path,
+        structure_file_path: Path,
+        nel_atom: Dict[str, int] = None,
+        kmesh: str = None,
+        erange: str = None,
+        npts: int = 100,
+        smearing: str = "gaussian",
+        sigma: float = 0.05,
+        pdos: bool = False,
+        is_gamma_center: bool = True,
+        override_overlap: Path = None,
+        efermi: float = None,
+        fermi_kmesh: str = None,
+        fermi_smearing_method: str = "FD",
+        work_path: str = ".",
+        plot_pdos: bool = False,
+        selected_orbitals: str = None,
+        xlim: str = None,
+) -> DosResult:
+    """
+    使用 DeePTB TBSystem 计算结构的 DOS/PDOS 并保存数据与图片。
+
+    Parameters
+    ----------
+    model_file_path : Path
+        DeePTB 模型文件路径。
+    structure_file_path : Path
+        输入结构文件路径，通常为 VASP/POSCAR 格式。
+    nel_atom : Dict[str, int], optional
+        元素价电子数字典，例如 ``{"Si": 4}``。未提供 ``efermi`` 时用于自动计算费米能级。
+    kmesh : str, optional
+        DOS 计算 k 点网格，例如 ``"[5,5,5]"``，默认 ``[5,5,5]``。
+    erange : str, optional
+        相对费米能级的能量范围，例如 ``"[-10,10]"``，默认 ``[-10,10]``。
+    npts : int, optional
+        能量网格点数。
+    smearing : str, optional
+        展宽方式，支持 ``gaussian`` 和 ``lorentzian``。
+    sigma : float, optional
+        展宽宽度，单位 eV。
+    pdos : bool, optional
+        是否计算投影 DOS。
+    is_gamma_center : bool, optional
+        是否使用 Gamma-centered k 点网格。
+    override_overlap : Path, optional
+        用于覆盖模型 overlap 的文件。
+    efermi : float, optional
+        外部指定费米能级。
+    fermi_kmesh : str, optional
+        自动计算费米能级时使用的 k 点网格，默认与 ``kmesh`` 相同。
+    fermi_smearing_method : str, optional
+        自动计算费米能级时使用的 smearing 方法。
+    work_path : str, optional
+        DOS 数据和图片保存目录。
+    plot_pdos : bool, optional
+        绘图时是否同时画 PDOS。
+    selected_orbitals : str, optional
+        绘制 PDOS 时选中的轨道下标或标签列表，例如 ``"[0,1]"``。
+    xlim : str, optional
+        绘图横轴范围，例如 ``"[-5,5]"``。
+
+    Returns
+    -------
+    DosResult
+        DOS 数据文件路径、图片路径和费米能级。
+    """
+    return _dos_predict(
+        model_file_path=model_file_path,
+        structure_file_path=structure_file_path,
+        nel_atom=nel_atom,
+        kmesh=kmesh,
+        erange=erange,
+        npts=npts,
+        smearing=smearing,
+        sigma=sigma,
+        pdos=pdos,
+        is_gamma_center=is_gamma_center,
+        override_overlap=override_overlap,
+        efermi=efermi,
+        fermi_kmesh=fermi_kmesh,
+        fermi_smearing_method=fermi_smearing_method,
+        work_path=work_path,
+        plot_pdos=plot_pdos,
+        selected_orbitals=selected_orbitals,
+        xlim=xlim,
+    )
+
+@mcp.tool()
+def dos_plot(
+        dos_file_path: Path,
+        e_min: float = None,
+        e_max: float = None,
+        dos_min: float = None,
+        dos_max: float = None,
+        match_efermi: bool = True,
+        plot_pdos: bool = False,
+        selected_orbitals: str = None,
+        work_path: str = ".",
+) -> DosPlotResult:
+    """
+    从 DeePTB DOS ``.npz`` 文件绘制 DOS/PDOS 图。
+
+    Parameters
+    ----------
+    dos_file_path : Path
+        ``dos_predict`` 生成或同格式的 DOS ``.npz`` 文件，包含 ``energy`` 和 ``dos``。
+    e_min, e_max : float, optional
+        横轴能量范围。默认使用文件中的能量范围；``match_efermi=True`` 时为相对费米能级。
+    dos_min, dos_max : float, optional
+        纵轴 DOS 范围。
+    match_efermi : bool, optional
+        是否将能量减去文件中的 ``fermi_level``，默认画 ``E - E_F``。
+    plot_pdos : bool, optional
+        文件包含 ``pdos`` 时是否同时绘制 PDOS。
+    selected_orbitals : str, optional
+        绘制 PDOS 时选中的轨道下标或标签列表，例如 ``"[0,1]"``。
+    work_path : str, optional
+        图片保存目录。
+
+    Returns
+    -------
+    DosPlotResult
+        生成的 DOS 图片路径。
+    """
+    return _dos_plot(
+        dos_file_path=dos_file_path,
+        e_min=e_min,
+        e_max=e_max,
+        dos_min=dos_min,
+        dos_max=dos_max,
+        match_efermi=match_efermi,
+        plot_pdos=plot_pdos,
+        selected_orbitals=selected_orbitals,
+        work_path=work_path,
+    )
 
 
 @mcp.tool()

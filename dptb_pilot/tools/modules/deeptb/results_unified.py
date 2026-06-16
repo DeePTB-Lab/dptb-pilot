@@ -12,6 +12,16 @@ class BandResult(TypedDict):
     fermi_level: float
 
 
+class DosResult(TypedDict):
+    dos_file_path: Path
+    image_file_path: Path
+    fermi_level: float
+
+
+class DosPlotResult(TypedDict):
+    dos_plot_path: Path
+
+
 class HamiltonianResult(TypedDict):
     hamiltonian_file_path: Path
     overlap_file_path: Path
