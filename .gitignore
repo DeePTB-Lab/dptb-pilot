@@ -78,3 +78,6 @@ test_generated_*
 
 # RAG result
 .sqlite3
+
+# vscode extension package
+.vsix

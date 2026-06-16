@@ -1,0 +1,20 @@
+.vscode/**
+.vscode-test/**
+
+# Source and development inputs are compiled into dist/ and media/ before packaging.
+src/**
+*.ts
+**/*.map
+tsconfig*.json
+vite.config.*
+vitest.config.*
+
+# Tests and local artifacts.
+**/*.test.*
+**/*.spec.*
+coverage/**
+*.vsix
+
+# Dependencies are build-time only for this extension; webview code is bundled into media/.
+node_modules/**
+package-lock.json
