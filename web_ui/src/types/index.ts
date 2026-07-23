@@ -56,14 +56,47 @@ export interface PropertySchema {
   description?: string;
 }
 
+export interface WorkflowStep {
+  id: string;
+  title: string;
+  purpose: string;
+  tools: string[];
+  inputs: string[];
+  outputs: string[];
+  depends_on: string[];
+}
+
+export interface WorkflowPlan {
+  title: string;
+  summary: string;
+  task: string;
+  steps: WorkflowStep[];
+  risks?: string[];
+  questions?: string[];
+  review?: WorkflowReview | null;
+}
+
+export interface WorkflowReview {
+  verdict: 'pass' | 'needs_attention' | 'block';
+  summary: string;
+  scientific_logic: string[];
+  execution_logic: string[];
+  blocking_issues: string[];
+  warnings: string[];
+  recommendations: string[];
+  evidence: string[];
+  reviewed_at?: string;
+}
+
 // WebSocket消息类型
 export interface WSMessage {
-  type: 'streaming_response' | 'final_response' | 'error' | 'tool_modify_required';
+  type: 'streaming_response' | 'final_response' | 'error' | 'tool_modify_required' | 'workflow_plan_required';
   content?: string;
   is_final?: boolean;
   message?: string;
   schema?: ToolSchema;
   tool_name?: string;
+  workflow_plan?: WorkflowPlan;
 }
 
 // 应用配置类型
@@ -162,6 +195,11 @@ export interface TerminateExecutionResponse {
   status: string;
 }
 
+export interface WorkflowPlanDecisionRequest {
+  session_id: string;
+  decision: 'approved' | 'rejected' | 'pilot_review';
+}
+
 // React应用状态类型
 export interface AppState {
   isAuthenticated: boolean;
@@ -177,5 +215,6 @@ export interface AppState {
   error: string | null;
   responding: boolean; // Agent是否正在响应
   pendingToolResponse: string; // 待处理的工具响应内容
+  pendingWorkflowPlan: WorkflowPlan | null;
   language: 'zh' | 'en';
 }

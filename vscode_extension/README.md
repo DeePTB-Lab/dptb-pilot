@@ -11,6 +11,8 @@ This package adds an independent VS Code interaction mode for dptb-pilot. It con
 - Upload files from VS Code or browser file picker.
 - List, preview, download, and delete session files.
 - Render Markdown, images, token/charge metadata, and `:::visualize` blocks with a JSON fallback.
+- Render structured `:::visualize` payloads for structure, BZ, curve, image, and table views.
+- Hand off supported visualizations to MatterViz through a configurable command id or URI template.
 - Confirm tool parameters using form or JSON mode.
 - Select Local/Remote execution mode and manage Bohrium/Slurm machine JSON configs.
 - Open via command or `vscode://` deep link.
@@ -75,6 +77,9 @@ Settings:
 - `dptbPilot.serverUrl` — defaults to `http://localhost:8000`.
 - `dptbPilot.sessionId` — optional default session id.
 - `dptbPilot.autoOpenOnUrl` — controls whether deep links open the chat view.
+- `dptbPilot.matterViz.commandId` — optional MatterViz command used to open a visualization payload.
+- `dptbPilot.matterViz.uriTemplate` — optional URI template with `{payload}` placeholder.
+- `dptbPilot.matterViz.autoOpen` — automatically forward supported visualizations when enabled.
 
 Deep link format:
 

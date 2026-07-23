@@ -3,6 +3,7 @@ import json
 import os
 import uuid
 import copy
+import re
 from typing import Dict, List, Optional, Any, AsyncGenerator
 from pathlib import Path
 from datetime import datetime
@@ -22,6 +23,7 @@ from google.adk.agents import LlmAgent
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
 from google.genai import types
+from litellm import acompletion
 from dptb_pilot.core.logger import get_logger
 from dptb_pilot.core.photon_service import get_photon_service, PhotonChargeResult
 from dptb_pilot.core.photon_config import CHARGING_ENABLED
@@ -39,6 +41,12 @@ pending_events: Dict[str, asyncio.Event] = {}
 unmodified_schema_store: Dict[str, Dict] = {}
 modified_schema_store: Dict[str, Dict] = {}
 modified_args_store: Dict[str, Dict] = {}
+
+# Workflow planning approval state.  Complex tasks pause here before tool execution.
+workflow_plan_store: Dict[str, Dict[str, Any]] = {}
+workflow_plan_events: Dict[str, asyncio.Event] = {}
+workflow_plan_decisions: Dict[str, str] = {}
+workflow_plan_tasks: Dict[str, str] = {}
 
 # 终止执行相关状态
 cancel_execution_events: Dict[str, asyncio.Event] = {}
@@ -103,6 +111,10 @@ class ModifyParamsRequest(BaseModel):
 
 class TerminateExecutionRequest(BaseModel):
     session_id: str
+
+class WorkflowPlanDecisionRequest(BaseModel):
+    session_id: str
+    decision: str
 
 
 def generate_executor_and_storage(
@@ -225,6 +237,316 @@ def generate_executor_and_storage(
     logger.info("=" * 80)
 
     return result_schema
+
+
+def should_plan_workflow(query: str) -> bool:
+    """Return True when a user request likely needs multi-step execution."""
+    text = (query or "").strip()
+    if len(text) >= 80:
+        return True
+
+    complex_markers = [
+        "workflow", "plan", "steps", "pipeline", "calculate", "scan", "compare",
+        "train", "optimize", "submit", "batch", "analyze", "download", "generate",
+        "工作流", "计划", "流程", "步骤", "计算", "扫描", "比较", "训练", "优化",
+        "提交", "批量", "分析", "下载", "生成", "拟合", "能带", "结构", "材料",
+    ]
+    hits = sum(1 for marker in complex_markers if marker.lower() in text.lower())
+    return hits >= 2
+
+
+def _is_workflow_approval(query: str) -> bool:
+    text = (query or "").strip().lower()
+    return text in {"approve", "approved", "yes", "ok", "go", "run", "execute", "同意", "通过", "确认", "执行", "开始"}
+
+
+def _is_workflow_rejection(query: str) -> bool:
+    text = (query or "").strip().lower()
+    return text in {"reject", "rejected", "no", "cancel", "stop", "拒绝", "取消", "不通过", "停止"}
+
+
+def _tool_catalog(limit: int = 60) -> List[Dict[str, str]]:
+    catalog = []
+    for tool in tools_info[:limit]:
+        catalog.append({
+            "name": str(tool.get("name", "")),
+            "description": str(tool.get("description", ""))[:500],
+        })
+    return catalog
+
+
+def _extract_json_object(text: str) -> Dict[str, Any]:
+    if not text:
+        raise ValueError("empty response")
+
+    cleaned = text.strip()
+    if cleaned.startswith("```"):
+        cleaned = re.sub(r"^```(?:json)?", "", cleaned, flags=re.IGNORECASE).strip()
+        cleaned = re.sub(r"```$", "", cleaned).strip()
+
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError:
+        start = cleaned.find("{")
+        end = cleaned.rfind("}")
+        if start >= 0 and end > start:
+            return json.loads(cleaned[start:end + 1])
+        raise
+
+
+def _normalize_workflow_plan(plan: Dict[str, Any], user_task: str) -> Dict[str, Any]:
+    steps = plan.get("steps") if isinstance(plan.get("steps"), list) else []
+    normalized_steps = []
+    for idx, step in enumerate(steps, 1):
+        if not isinstance(step, dict):
+            continue
+        tools = step.get("tools") or step.get("modules") or []
+        if isinstance(tools, str):
+            tools = [tools]
+        depends_on = step.get("depends_on") or []
+        if isinstance(depends_on, (str, int)):
+            depends_on = [depends_on]
+        normalized_steps.append({
+            "id": str(step.get("id") or f"S{idx}"),
+            "title": str(step.get("title") or step.get("name") or f"Step {idx}"),
+            "purpose": str(step.get("purpose") or step.get("description") or ""),
+            "tools": [str(item) for item in tools],
+            "inputs": step.get("inputs") if isinstance(step.get("inputs"), list) else [],
+            "outputs": step.get("outputs") if isinstance(step.get("outputs"), list) else [],
+            "depends_on": [str(item) for item in depends_on],
+        })
+
+    if not normalized_steps:
+        return _fallback_workflow_plan(user_task)
+
+    return {
+        "title": str(plan.get("title") or "Workflow plan"),
+        "summary": str(plan.get("summary") or "A reviewed execution plan for the requested task."),
+        "task": user_task,
+        "steps": normalized_steps,
+        "risks": plan.get("risks") if isinstance(plan.get("risks"), list) else [],
+        "questions": plan.get("questions") if isinstance(plan.get("questions"), list) else [],
+        "review": plan.get("review") if isinstance(plan.get("review"), dict) else None,
+    }
+
+
+def _fallback_workflow_plan(user_task: str) -> Dict[str, Any]:
+    available = [tool["name"] for tool in _tool_catalog(limit=20) if tool["name"]]
+    return {
+        "title": "Workflow plan",
+        "summary": "Pilot will inspect available files and knowledge first, then run the required DeePTB/materials tools after your approval.",
+        "task": user_task,
+        "steps": [
+            {
+                "id": "S1",
+                "title": "Clarify inputs and constraints",
+                "purpose": "Identify uploaded structures, target properties, model files, execution mode, and missing assumptions.",
+                "tools": ["list_workspace_files", "search_knowledge_base"],
+                "inputs": ["user request", "session files"],
+                "outputs": ["resolved task inputs"],
+                "depends_on": [],
+            },
+            {
+                "id": "S2",
+                "title": "Prepare calculation assets",
+                "purpose": "Generate or select the required DeePTB configuration, structure files, and runtime parameters.",
+                "tools": available[:6],
+                "inputs": ["resolved task inputs"],
+                "outputs": ["ready-to-run files and parameters"],
+                "depends_on": ["S1"],
+            },
+            {
+                "id": "S3",
+                "title": "Execute approved modules",
+                "purpose": "Run the selected local or remote computational modules with reviewed parameters.",
+                "tools": available[6:12],
+                "inputs": ["ready-to-run files and parameters"],
+                "outputs": ["raw calculation outputs"],
+                "depends_on": ["S2"],
+            },
+            {
+                "id": "S4",
+                "title": "Postprocess and report",
+                "purpose": "Collect generated artifacts, visualize results when possible, and summarize conclusions.",
+                "tools": ["download_artifact", "visualize_structure", "visualize_brillouin_zone"],
+                "inputs": ["raw calculation outputs"],
+                "outputs": ["figures, files, and final answer"],
+                "depends_on": ["S3"],
+            },
+        ],
+        "risks": ["Some tool parameters may still require confirmation during execution."],
+        "questions": [],
+        "review": None,
+    }
+
+
+def _normalize_workflow_review(review: Dict[str, Any]) -> Dict[str, Any]:
+    def list_of_strings(key: str) -> List[str]:
+        value = review.get(key)
+        if not isinstance(value, list):
+            return []
+        return [str(item) for item in value if str(item).strip()]
+
+    verdict = str(review.get("verdict") or "needs_attention").lower().strip()
+    if verdict not in {"pass", "needs_attention", "block"}:
+        verdict = "needs_attention"
+
+    return {
+        "verdict": verdict,
+        "summary": str(review.get("summary") or "Pilot reviewed the workflow plan against the DeePTB knowledge base."),
+        "scientific_logic": list_of_strings("scientific_logic"),
+        "execution_logic": list_of_strings("execution_logic"),
+        "blocking_issues": list_of_strings("blocking_issues"),
+        "warnings": list_of_strings("warnings"),
+        "recommendations": list_of_strings("recommendations"),
+        "evidence": list_of_strings("evidence"),
+        "reviewed_at": datetime.utcnow().isoformat(timespec="seconds") + "Z",
+    }
+
+
+async def generate_workflow_review(plan: Dict[str, Any]) -> Dict[str, Any]:
+    task = str(plan.get("task") or "")
+    steps = plan.get("steps") if isinstance(plan.get("steps"), list) else []
+    tool_names = sorted({
+        str(tool)
+        for step in steps
+        for tool in (step.get("tools") or [])
+        if str(tool).strip()
+    })
+    step_titles = "; ".join(str(step.get("title", "")) for step in steps)
+    kb_queries = [
+        f"DeePTB workflow scientific validity {task} {step_titles}",
+        f"DeePTB tools runtime logic inputs outputs {' '.join(tool_names)}",
+        f"DeePTB common mistakes configuration calculation workflow {task}",
+    ]
+
+    evidence_chunks: List[str] = []
+    try:
+        from dptb_pilot.tools.modules.knowledge.rag_tool import search_knowledge_base
+
+        for query in kb_queries:
+            result = search_knowledge_base(query=query[:500], n_results=3)
+            evidence_chunks.append(result[:3500])
+    except Exception as exc:
+        logger.warning(f"[WorkflowReview] Knowledge search failed, reviewing with planner context only: {exc}")
+        evidence_chunks.append(f"Knowledge search unavailable: {exc}")
+
+    system = {
+        "role": "system",
+        "content": (
+            "You are DeePTB Pilot's workflow reviewer. Check both scientific logic and execution logic. "
+            "Use the supplied knowledge-base evidence as the main source of truth. "
+            "Return strict JSON only with keys: verdict, summary, scientific_logic, execution_logic, "
+            "blocking_issues, warnings, recommendations, evidence. "
+            "verdict must be one of pass, needs_attention, block."
+        ),
+    }
+    prompt = {
+        "role": "user",
+        "content": (
+            "Review this proposed workflow plan before execution.\n\n"
+            f"Workflow plan JSON:\n{json.dumps(plan, ensure_ascii=False)}\n\n"
+            f"Knowledge-base evidence:\n{chr(10).join(evidence_chunks)}"
+        ),
+    }
+
+    try:
+        response = await acompletion(messages=[system, prompt], **model_config)
+        content = response.choices[0].message.content
+        return _normalize_workflow_review(_extract_json_object(content))
+    except Exception as exc:
+        logger.warning(f"[WorkflowReview] LLM review failed, using fallback report: {exc}")
+        return _normalize_workflow_review({
+            "verdict": "needs_attention",
+            "summary": "Pilot could not complete the model-based review. The plan can still be manually reviewed before approval.",
+            "scientific_logic": [],
+            "execution_logic": [],
+            "blocking_issues": [],
+            "warnings": [f"Automatic review failed: {exc}"],
+            "recommendations": ["Manually verify the task assumptions, required inputs, selected tools, and output dependencies before approving."],
+            "evidence": evidence_chunks[:3],
+        })
+
+
+async def generate_workflow_plan(user_task: str) -> Dict[str, Any]:
+    prompt = {
+        "role": "user",
+        "content": (
+            "Design a workflow plan for the user task using only the available DeePTB Pilot tools. "
+            "Return strict JSON with keys: title, summary, steps, risks, questions. "
+            "Each step must have id, title, purpose, tools, inputs, outputs, depends_on. "
+            "Do not execute tools. User task:\n"
+            f"{user_task}\n\nAvailable tools:\n{json.dumps(_tool_catalog(), ensure_ascii=False)}"
+        ),
+    }
+    system = {
+        "role": "system",
+        "content": (
+            "You are DeePTB Pilot's workflow planner. Produce concise, auditable plans. "
+            "Use tool names exactly when relevant. Prefer 3-6 steps. Return JSON only."
+        ),
+    }
+
+    try:
+        response = await acompletion(messages=[system, prompt], **model_config)
+        content = response.choices[0].message.content
+        return _normalize_workflow_plan(_extract_json_object(content), user_task)
+    except Exception as exc:
+        logger.warning(f"[WorkflowPlan] LLM planning failed, using fallback plan: {exc}")
+        return _fallback_workflow_plan(user_task)
+
+
+def render_workflow_plan_markdown(plan: Dict[str, Any]) -> str:
+    lines = [
+        "## Workflow plan for review",
+        "",
+        f"**Goal:** {plan.get('summary', '')}",
+        "",
+        "```mermaid",
+        "flowchart TD",
+    ]
+    steps = plan.get("steps", [])
+    for step in steps:
+        label = f"{step.get('id')}: {step.get('title')}"
+        lines.append(f"  {step.get('id')}[\"{label}\"]")
+    for step in steps:
+        for dep in step.get("depends_on", []):
+            lines.append(f"  {dep} --> {step.get('id')}")
+    lines.extend(["```", "", "| Step | Purpose | Modules |", "| --- | --- | --- |"])
+    for step in steps:
+        tools = ", ".join(step.get("tools") or ["none"])
+        lines.append(f"| {step.get('id')} {step.get('title')} | {step.get('purpose')} | `{tools}` |")
+    if plan.get("risks"):
+        lines.extend(["", "**Risks / checks:**"])
+        lines.extend([f"- {item}" for item in plan["risks"]])
+    if plan.get("questions"):
+        lines.extend(["", "**Open questions:**"])
+        lines.extend([f"- {item}" for item in plan["questions"]])
+    review = plan.get("review") if isinstance(plan.get("review"), dict) else None
+    if review:
+        lines.extend(["", "## Pilot review report", "", f"**Verdict:** `{review.get('verdict', 'needs_attention')}`", "", str(review.get("summary", ""))])
+        for title, key in [
+            ("Scientific logic", "scientific_logic"),
+            ("Execution logic", "execution_logic"),
+            ("Blocking issues", "blocking_issues"),
+            ("Warnings", "warnings"),
+            ("Recommendations", "recommendations"),
+        ]:
+            items = review.get(key) if isinstance(review.get(key), list) else []
+            if items:
+                lines.extend(["", f"**{title}:**"])
+                lines.extend([f"- {item}" for item in items])
+    lines.append("\nUse the right panel to review manually, ask Pilot to review, approve, or reject this workflow.")
+    return "\n".join(lines)
+
+
+def build_approved_workflow_query(user_task: str, plan: Dict[str, Any]) -> str:
+    return (
+        "The user has approved this workflow plan. Execute the original task following it. "
+        "If a later tool call needs parameter confirmation, pause for the existing parameter review UI.\n\n"
+        f"Original task:\n{user_task}\n\nApproved workflow JSON:\n"
+        f"{json.dumps(plan, ensure_ascii=False)}"
+    )
 
 async def call_agent_async(query: str, runner: Runner, user_id: str, session_id: str) -> AsyncGenerator[Dict[str, Any], None]:
     """与agent异步对话，支持MCP工具拦截"""
@@ -372,11 +694,18 @@ async def chat_with_agent(message: ChatMessage):
         raise HTTPException(status_code=404, detail="Agent未找到，请重新登录")
 
     agent = active_agents[session_id]
-    session = await session_service.create_session(
-        app_name=agent_info["name"],
-        user_id=session_id[:4],
-        session_id=session_id
-    )
+    try:
+        session = await session_service.create_session(
+            app_name=agent_info["name"],
+            user_id=session_id[:4],
+            session_id=session_id
+        )
+    except Exception:
+        session = await session_service.get_session(
+            app_name=agent_info["name"],
+            user_id=session_id[:4],
+            session_id=session_id
+        )
 
     runner = Runner(
         agent=agent,
@@ -384,9 +713,32 @@ async def chat_with_agent(message: ChatMessage):
         session_service=session_service
     )
 
+    has_approved_workflow = False
+    if session_id in workflow_plan_store and _is_workflow_rejection(user_message):
+        workflow_plan_store.pop(session_id, None)
+        workflow_plan_tasks.pop(session_id, None)
+        return {"response": "Workflow was rejected. Send a revised task to create another plan.", "is_final": True}
+
+    if session_id in workflow_plan_store and _is_workflow_approval(user_message):
+        plan = workflow_plan_store.pop(session_id)
+        original_task = workflow_plan_tasks.pop(session_id, plan.get("task", ""))
+        user_message = build_approved_workflow_query(original_task, plan)
+        has_approved_workflow = True
+
+    if not has_approved_workflow and should_plan_workflow(user_message):
+        plan = await generate_workflow_plan(user_message)
+        workflow_plan_store[session_id] = plan
+        workflow_plan_tasks[session_id] = user_message
+        return {
+            "response": render_workflow_plan_markdown(plan),
+            "is_final": False,
+            "requires_workflow_approval": True,
+            "workflow_plan": plan,
+        }
+
     full_response = ""
     async for response in call_agent_async(user_message, runner, session_id[:4], session_id):
-        full_response += response.get("content", "")
+        full_response += (response.get("content") or "")
 
     chat_id = message.chat_id
     
@@ -455,6 +807,7 @@ async def websocket_chat(websocket: WebSocket, session_id: str):
             data = await websocket.receive_text()
             message_data = json.loads(data)
             user_message = message_data.get("message", "")
+            original_user_message = user_message
             chat_id = message_data.get("chat_id")
 
             if not user_message.strip():
@@ -467,6 +820,63 @@ async def websocket_chat(websocket: WebSocket, session_id: str):
             response_text = ""
             usage_metadata = None
             try:
+                if should_plan_workflow(user_message):
+                    plan = await generate_workflow_plan(user_message)
+                    plan_markdown = render_workflow_plan_markdown(plan)
+                    workflow_plan_store[session_id] = plan
+                    workflow_plan_tasks[session_id] = user_message
+                    workflow_plan_decisions.pop(session_id, None)
+                    workflow_plan_events[session_id] = asyncio.Event()
+
+                    response_text = plan_markdown
+                    await websocket.send_text(json.dumps({
+                        "type": "streaming_response",
+                        "content": response_text,
+                        "is_final": False
+                    }))
+                    await websocket.send_text(json.dumps({
+                        "type": "workflow_plan_required",
+                        "workflow_plan": plan
+                    }))
+
+                    try:
+                        await asyncio.wait_for(workflow_plan_events[session_id].wait(), timeout=1800.0)
+                    except asyncio.TimeoutError:
+                        workflow_plan_store.pop(session_id, None)
+                        workflow_plan_tasks.pop(session_id, None)
+                        workflow_plan_events.pop(session_id, None)
+                        await websocket.send_text(json.dumps({
+                            "type": "final_response",
+                            "content": response_text + "\n\nWorkflow review timed out. Please send the task again when ready.",
+                            "is_final": True
+                        }))
+                        continue
+
+                    decision = workflow_plan_decisions.pop(session_id, "rejected")
+                    workflow_plan_events.pop(session_id, None)
+                    if decision != "approved":
+                        workflow_plan_store.pop(session_id, None)
+                        workflow_plan_tasks.pop(session_id, None)
+                        response_text = response_text + "\n\nWorkflow was rejected. Revise the request or send a new task to create another plan."
+                        await websocket.send_text(json.dumps({
+                            "type": "final_response",
+                            "content": response_text,
+                            "is_final": True
+                        }))
+                        continue
+
+                    plan = workflow_plan_store.get(session_id, plan)
+                    response_text = render_workflow_plan_markdown(plan)
+                    user_message = build_approved_workflow_query(user_message, plan)
+                    response_text = response_text + "\n\n---\n\nWorkflow approved. Starting execution...\n\n"
+                    await websocket.send_text(json.dumps({
+                        "type": "streaming_response",
+                        "content": response_text,
+                        "is_final": False
+                    }))
+                    workflow_plan_store.pop(session_id, None)
+                    workflow_plan_tasks.pop(session_id, None)
+
                 async for response in call_agent_async(user_message, runner, session_id[:4], session_id):
                     if response["type"] in ["streaming_response", "final_response"]:
                         response_text += (response.get("content") or "")
@@ -481,7 +891,9 @@ async def websocket_chat(websocket: WebSocket, session_id: str):
                              # Store usage metadata for photon charging
                              usage_metadata = response["usage"]
 
-                        await websocket.send_text(json.dumps(response))
+                        outbound = dict(response)
+                        outbound["content"] = response_text
+                        await websocket.send_text(json.dumps(outbound))
             except Exception as e:
                 logger.error(f"Error during agent execution: {e}")
                 import traceback
@@ -558,7 +970,7 @@ async def websocket_chat(websocket: WebSocket, session_id: str):
 
             # 更新聊天历史
             history = history_pool[chat_id]
-            history.append([user_message, response_text])
+            history.append([original_user_message, response_text])
             
             # 同步更新 sessions.json (这是唯一的持久化存储)
             update_session_history(session_id, chat_id, history, work_path)
@@ -907,6 +1319,52 @@ async def get_current_schema(session_id: str):
     """获取当前需要修改的参数schema"""
     schema = unmodified_schema_store.get(session_id, {})
     return {"schema": schema}
+
+
+@app.get("/api/workflow-plan/{session_id}")
+async def get_current_workflow_plan(session_id: str):
+    """Return the workflow plan currently waiting for user review."""
+    return {"workflow_plan": workflow_plan_store.get(session_id, {})}
+
+
+@app.post("/api/workflow-plan/decision")
+async def decide_workflow_plan(request: WorkflowPlanDecisionRequest):
+    """Approve, reject, or run Pilot review for a pending workflow plan."""
+    session_id = request.session_id
+    decision = request.decision.lower().strip()
+    if decision not in {"approved", "rejected", "pilot_review"}:
+        raise HTTPException(status_code=400, detail="decision must be approved, rejected, or pilot_review")
+    if session_id not in workflow_plan_store:
+        raise HTTPException(status_code=404, detail="No workflow plan is waiting for review")
+
+    if decision == "pilot_review":
+        plan = workflow_plan_store[session_id]
+        review = await generate_workflow_review(plan)
+        plan["review"] = review
+        workflow_plan_store[session_id] = plan
+        await manager.send_message(session_id, {
+            "type": "workflow_plan_required",
+            "workflow_plan": plan,
+        })
+        await manager.send_message(session_id, {
+            "type": "streaming_response",
+            "content": render_workflow_plan_markdown(plan),
+            "is_final": False,
+        })
+        return {
+            "message": "Workflow plan reviewed by Pilot",
+            "decision": decision,
+            "workflow_plan": plan,
+        }
+
+    workflow_plan_decisions[session_id] = decision
+    if session_id in workflow_plan_events:
+        workflow_plan_events[session_id].set()
+    if decision == "rejected":
+        workflow_plan_store.pop(session_id, None)
+        workflow_plan_tasks.pop(session_id, None)
+
+    return {"message": f"Workflow plan {decision}", "decision": decision}
 
 
 @app.get("/api/health")

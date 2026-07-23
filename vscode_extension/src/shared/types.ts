@@ -19,6 +19,22 @@ export interface ChatMessage {
   };
 }
 
+export type VisualizationKind = 'structure' | 'bz' | 'band' | 'dos' | 'curve' | 'image' | 'table' | 'text';
+
+export interface VisualizationSource {
+  sessionId?: string;
+  file?: string;
+  tool?: string;
+}
+
+export interface VisualizationPayload {
+  kind: VisualizationKind;
+  title?: string;
+  source?: VisualizationSource;
+  data: unknown;
+  meta?: Record<string, unknown>;
+}
+
 export interface LoginRequest {
   session_id: string;
 }
@@ -137,6 +153,11 @@ export interface ExtensionBootstrap {
   serverUrl: string;
   sessionId: string;
   extensionUri: string;
+  matterViz?: {
+    commandId?: string;
+    uriTemplate?: string;
+    autoOpen?: boolean;
+  };
 }
 
 export type HostToWebviewMessage =
@@ -153,4 +174,5 @@ export type WebviewToHostMessage =
   | { type: 'pickFiles' }
   | { type: 'uploadCurrentFile' }
   | { type: 'saveSecret'; payload: { key: string; value: string } }
-  | { type: 'getSecret'; payload: { key: string; requestId: string } };
+  | { type: 'getSecret'; payload: { key: string; requestId: string } }
+  | { type: 'openInMatterViz'; payload: { visualization: VisualizationPayload } };

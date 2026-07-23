@@ -1,12 +1,89 @@
 from pathlib import Path
-from typing import TypedDict, List
+from typing import Optional, TypedDict, List
 
 from dptb_pilot.tools.init import mcp
-from dptb_pilot.tools.modules.deeptb.submodules.uniaxial_strain import _generate_uniaxial_strain_lammps_input_file
+from dptb_pilot.tools.modules.deeptb.submodules.uniaxial_strain import (
+    _generate_lammps_input_file,
+    _generate_uniaxial_strain_ensemble_lammps_input_file,
+    _generate_uniaxial_strain_lammps_input_file,
+    _generate_unstrained_lammps_input_file,
+)
 
 class GenerateUniaxialStrainInputResult(TypedDict):
     in_lammps_file_paths: List[Path]
     lammps_data_file_paths: List[Path]
+
+
+class GenerateUniaxialStrainEnsembleInputResult(TypedDict):
+    in_lammps_file_paths: List[Path]
+    lammps_data_file_paths: List[Path]
+    task_infos: List[dict]
+
+
+class GenerateUnstrainedLammpsInputResult(TypedDict):
+    in_lammps_file_paths: List[Path]
+    lammps_data_file_paths: List[Path]
+    task_paths: List[Path]
+
+
+class GenerateLammpsInputResult(TypedDict):
+    in_lammps_file_paths: List[Path]
+    lammps_data_file_paths: List[Path]
+    task_paths: List[Path]
+    task_infos: List[dict]
+
+
+@mcp.tool()
+def generate_lammps_input_file(
+        struture_file_path: Path,
+        strains: Optional[List[float]] = None,
+        lammps_run_method: str = 'relax',
+        axis='auto',
+        target_length=20,
+        model_name='model.pb',
+        temps: Optional[List[float]] = None,
+        press: Optional[List[float]] = None,
+        ensemble='smart',
+        dt=1.0,
+        nsteps=5000,
+        temp_0=50,
+        nstep_heating=10000,
+        nstep_equil=10000,
+        n_out=10,
+        sample_interval=1000,
+) -> GenerateLammpsInputResult:
+    """
+    Generate LAMMPS input/data files with one unified task selector.
+
+    ``strains=None`` generates one unstrained structure. Passing a list of strain
+    percentages generates one strained structure for each value.
+
+    ``lammps_run_method`` selects the LAMMPS input workflow:
+    - ``single``/``run0``: static run 0
+    - ``relax``/``min``: energy minimization
+    - ``ensemble``: use the ``ensemble`` argument
+    - ``smart``/``nvt``/``npt``/``nve``: shorthand ensemble sampling modes
+    """
+    return _generate_lammps_input_file(
+        output_root='.',
+        poscar_file=struture_file_path,
+        strains=strains,
+        lammps_run_method=lammps_run_method,
+        axis=axis,
+        target_length=target_length,
+        model_name=model_name,
+        temps=temps,
+        press=press,
+        ensemble=ensemble,
+        dt=dt,
+        nsteps=nsteps,
+        temp_0=temp_0,
+        nstep_heating=nstep_heating,
+        nstep_equil=nstep_equil,
+        n_out=n_out,
+        sample_interval=sample_interval,
+    )
+
 
 @mcp.tool()
 def generate_uniaxial_strain_input_file(
@@ -110,5 +187,75 @@ def generate_uniaxial_strain_input_file(
                                                 target_length=target_length,
                                                 model_name=model_name,
                                                 relax_after_strain=relax_after_strain)
+
+
+@mcp.tool()
+def generate_uniaxial_strain_ensemble_input_file(
+        struture_file_path: Path,
+        strain_list: List[float],
+        temps: List[float],
+        press: List[float],
+        ensemble='smart',
+        axis='auto',
+        target_length=20,
+        model_name='model.pb',
+        dt=1.0,
+        nsteps=5000,
+        temp_0=50,
+        nstep_heating=10000,
+        nstep_equil=10000,
+        n_out=10,
+        sample_interval=1000,
+) -> GenerateUniaxialStrainEnsembleInputResult:
+    """
+    Generate LAMMPS input files for uniaxial-strain ensemble sampling tasks.
+
+    For every strain, temperature, and pressure combination, this tool creates a
+    task directory containing POSCAR, lammps.data, and in.lammps. The default
+    ``smart`` ensemble writes a minimization, heating, equilibration, and
+    trajectory-sampling workflow for ensemble-average structure sampling.
+    """
+    return _generate_uniaxial_strain_ensemble_lammps_input_file(
+        output_root='.',
+        poscar_file=struture_file_path,
+        strain_list=strain_list,
+        temps=temps,
+        press=press,
+        ensemble=ensemble,
+        axis=axis,
+        target_length=target_length,
+        model_name=model_name,
+        dt=dt,
+        nsteps=nsteps,
+        temp_0=temp_0,
+        nstep_heating=nstep_heating,
+        nstep_equil=nstep_equil,
+        n_out=n_out,
+        sample_interval=sample_interval,
+    )
+
+
+@mcp.tool()
+def generate_unstrained_lammps_input_file(
+        struture_file_path: Path,
+        axis='auto',
+        target_length=20,
+        model_name='model.pb',
+        relax=True,
+) -> GenerateUnstrainedLammpsInputResult:
+    """
+    Generate an unstrained LAMMPS task directory with POSCAR, lammps.data, and in.lammps.
+
+    The structure is expanded with the same supercell convention used by the
+    uniaxial strain tools, but no strain is applied.
+    """
+    return _generate_unstrained_lammps_input_file(
+        output_root='.',
+        poscar_file=struture_file_path,
+        axis=axis,
+        target_length=target_length,
+        model_name=model_name,
+        relax=relax,
+    )
 
 

@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import { Card, Input, Button, Typography, Form, Alert, Spin } from 'antd';
 import { KeyOutlined } from '@ant-design/icons';
 import { useApp } from '../../contexts/AppContext';
-import Cookies from 'js-cookie'
 
 const { Paragraph, Text } = Typography;
 

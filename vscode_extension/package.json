@@ -19,6 +19,7 @@
     "onCommand:dptbPilot.connectServer",
     "onCommand:dptbPilot.newSession",
     "onCommand:dptbPilot.uploadCurrentFile",
+    "onCommand:dptbPilot.openVisualizationInMatterViz",
     "onUri"
   ],
   "main": "./dist/extension.js",
@@ -39,6 +40,10 @@
       {
         "command": "dptbPilot.uploadCurrentFile",
         "title": "DPTB Pilot: Upload Current File"
+      },
+      {
+        "command": "dptbPilot.openVisualizationInMatterViz",
+        "title": "DPTB Pilot: Open Visualization in MatterViz"
       }
     ],
     "configuration": {
@@ -58,6 +63,21 @@
           "type": "boolean",
           "default": true,
           "description": "Open the chat webview when a vscode:// dptb-pilot connection URL is handled."
+        },
+        "dptbPilot.matterViz.commandId": {
+          "type": "string",
+          "default": "",
+          "description": "Optional VS Code command id provided by MatterViz for opening visualizations."
+        },
+        "dptbPilot.matterViz.uriTemplate": {
+          "type": "string",
+          "default": "",
+          "description": "Optional URI template used to open MatterViz, with {payload} replaced by a URL-encoded JSON payload."
+        },
+        "dptbPilot.matterViz.autoOpen": {
+          "type": "boolean",
+          "default": false,
+          "description": "Automatically forward supported visualizations to MatterViz when possible."
         }
       }
     }

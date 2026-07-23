@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+﻿import { useEffect, useMemo, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { DptbPilotClient } from '../../api/client';
 import { generateSessionId, isValidSessionId, normalizeBaseUrl } from '../../api/url';
@@ -13,6 +13,7 @@ import type {
   RemoteMachine,
   SlurmConfig,
   ToolSchema,
+  VisualizationPayload,
   WebviewToHostMessage,
   WSMessage
 } from '../../shared/types';
@@ -24,12 +25,13 @@ declare global {
 }
 
 const vscode = window.acquireVsCodeApi?.();
+const defaultMatterViz = { commandId: '', uriTemplate: '', autoOpen: false };
 
 const shortcutPrompts = [
-  { title: '分析结构', description: '分析上传的晶体结构文件', prompt: '请帮我分析一下上传的晶体结构文件' },
-  { title: '计算能带', description: '计算并绘制能带图', prompt: '请帮我计算并绘制能带图' },
-  { title: '生成配置', description: '生成 DeepTB 训练配置文件', prompt: '请帮我生成DeepTB训练配置文件' },
-  { title: '搜索材料', description: '搜索相关材料数据', prompt: '请帮我搜索相关的材料数据' }
+  { title: 'Analyze Structure', description: 'Inspect an uploaded crystal structure file', prompt: 'Please analyze the uploaded crystal structure file.' },
+  { title: 'Calculate Bands', description: 'Compute and plot a band structure', prompt: 'Please help me compute and plot a band structure.' },
+  { title: 'Generate Config', description: 'Generate a DeePTB training config', prompt: 'Please generate a DeePTB training configuration file.' },
+  { title: 'Search Materials', description: 'Search related materials data', prompt: 'Please search for relevant materials data.' }
 ];
 
 export function App() {
@@ -51,6 +53,7 @@ export function App() {
   const [preview, setPreview] = useState<{ file: FileInfo; content?: string; imageUrl?: string } | null>(null);
   const [remoteMachines, setRemoteMachines] = useState<RemoteMachine[]>(() => readLocal('dptb.remoteMachines', []));
   const [selectedMachineId, setSelectedMachineId] = useState<string>(() => readLocal('dptb.selectedMachineId', ''));
+  const [matterViz, setMatterViz] = useState(defaultMatterViz);
 
   const wsRef = useRef<WebSocket | null>(null);
   const currentChatIdRef = useRef('');
@@ -66,6 +69,7 @@ export function App() {
       if (message.type === 'bootstrap') {
         setServerUrl(message.payload.serverUrl || 'http://localhost:8000');
         if (message.payload.sessionId) setSessionId(message.payload.sessionId);
+        setMatterViz({ ...defaultMatterViz, ...message.payload.matterViz });
       } else if (message.type === 'serverUrlChanged') {
         setServerUrl(message.payload.serverUrl);
         setConnected(false);
@@ -108,7 +112,7 @@ export function App() {
     const cleanServerUrl = normalizeBaseUrl(serverUrl);
     const cleanSessionId = targetSessionId.trim();
     if (!isValidSessionId(cleanSessionId)) {
-      setError('Session ID 必须是 32 位字母或数字。');
+      setError('Session ID must be 32 alphanumeric characters.');
       return;
     }
 
@@ -154,7 +158,7 @@ export function App() {
     const ws = activeClient.createWebSocket(userId);
     wsRef.current = ws;
     ws.onmessage = (event) => handleWSMessage(DptbPilotClient.parseWSMessage(event.data));
-    ws.onerror = () => setError('WebSocket 连接失败，请确认后端服务可访问。');
+    ws.onerror = () => setError('WebSocket connection failed. Please check that the backend is reachable.');
     ws.onclose = () => setResponding(false);
   }
 
@@ -172,7 +176,7 @@ export function App() {
         setActivePanel('params');
       }
     } else if (message.type === 'error') {
-      setError(message.message || '后端返回错误');
+      setError(message.message || '鍚庣杩斿洖閿欒');
       setResponding(false);
     } else if (message.type === 'charge_result') {
       patchLastAssistant({ charge_result: message.charge_result });
@@ -273,7 +277,7 @@ export function App() {
 
     const selectedMachine = remoteMachines.find((item) => item.id === selectedMachineId) || null;
     if (executionMode === 'Remote' && !selectedMachine) {
-      setError('请选择远程机器后再提交参数。');
+      setError('Select a remote machine before submitting parameters.');
       setActivePanel('params');
       return;
     }
@@ -333,7 +337,7 @@ export function App() {
   }
 
   function addRemoteMachine(type: 'Bohrium' | 'Slurm') {
-    const name = prompt('机器名称');
+    const name = prompt('鏈哄櫒鍚嶇О');
     if (!name) return;
     const machine: RemoteMachine = type === 'Bohrium'
       ? { id: String(Date.now()), name, type, config: { username: '', password: '', project_id: '', image_name: '', scass_type: '' } }
@@ -356,22 +360,22 @@ export function App() {
           <label>Session ID</label>
           <div className="inline-row">
             <input value={sessionId} onChange={(event) => setSessionId(event.target.value.replace(/[^a-zA-Z0-9]/g, '').slice(0, 32))} placeholder="32-char session id" />
-            <button onClick={() => setSessionId(generateSessionId())}>生成</button>
+            <button onClick={() => setSessionId(generateSessionId())}>鐢熸垚</button>
           </div>
-          <button className="primary" disabled={loading} onClick={() => void login()}>{loading ? '连接中...' : connected ? '重新连接' : '连接'}</button>
+          <button className="primary" disabled={loading} onClick={() => void login()}>{loading ? '杩炴帴涓?..' : connected ? '閲嶆柊杩炴帴' : '杩炴帴'}</button>
           {error && <div className="error-box">{error}</div>}
         </section>
 
         <section className="sessions-header">
-          <strong>会话</strong>
-          <button onClick={() => void createNewSession()} disabled={!connected}>新建</button>
+          <strong>浼氳瘽</strong>
+          <button onClick={() => void createNewSession()} disabled={!connected}>鏂板缓</button>
         </section>
         <div className="session-list">
           {sessions.map((session) => (
             <button key={session.chat_id} className={session.chat_id === currentChatId ? 'selected session-item' : 'session-item'} onClick={() => setCurrentChatId(session.chat_id)}>
               <span>{session.title || 'Untitled'}</span>
               <small>{session.message_count || session.history.length} messages</small>
-              <span className="delete" onClick={(event) => { event.stopPropagation(); void deleteSession(session.chat_id); }}>×</span>
+              <span className="delete" onClick={(event) => { event.stopPropagation(); void deleteSession(session.chat_id); }}>脳</span>
             </button>
           ))}
         </div>
@@ -381,7 +385,7 @@ export function App() {
         <div className="message-list">
           {!currentSession?.history.length && (
             <div className="welcome">
-              <h2>选择一个操作开始</h2>
+              <h2>Choose an action to start</h2>
               <div className="shortcut-grid">
                 {shortcutPrompts.map((item) => (
                   <button key={item.title} onClick={() => void sendMessage(item.prompt)} disabled={!connected}>
@@ -392,27 +396,27 @@ export function App() {
               </div>
             </div>
           )}
-          {currentSession?.history.map((message, index) => <MessageBubble key={index} message={message} responding={responding && index === currentSession.history.length - 1} />)}
+          {currentSession?.history.map((message, index) => <MessageBubble key={index} message={message} matterViz={matterViz} responding={responding && index === currentSession.history.length - 1} />)}
           <div ref={messagesEndRef} />
         </div>
 
         <div className="composer">
-          <button title="选择文件上传" onClick={() => vscode?.postMessage({ type: 'pickFiles' })}>📎</button>
-          <button title="上传当前编辑器文件" onClick={() => vscode?.postMessage({ type: 'uploadCurrentFile' })}>⇧</button>
+          <button title="Select files to upload" onClick={() => vscode?.postMessage({ type: 'pickFiles' })}>Upload</button>
+          <button title="Upload current editor file" onClick={() => vscode?.postMessage({ type: 'uploadCurrentFile' })}>Current</button>
           <textarea value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => {
             if (event.key === 'Enter' && !event.shiftKey) {
               event.preventDefault();
               void sendMessage();
             }
-          }} placeholder="输入消息，Enter 发送，Shift+Enter 换行" />
-          <button className="primary" disabled={!connected || !input.trim() || responding} onClick={() => void sendMessage()}>{responding ? '响应中' : '发送'}</button>
+          }} placeholder="Type a message. Enter sends, Shift+Enter inserts a new line." />
+          <button className="primary" disabled={!connected || !input.trim() || responding} onClick={() => void sendMessage()}>{responding ? 'Responding...' : 'Send'}</button>
         </div>
       </main>
 
       <aside className="right-panel">
         <div className="tabs">
-          <button className={activePanel === 'params' ? 'selected' : ''} onClick={() => setActivePanel('params')}>参数</button>
-          <button className={activePanel === 'files' ? 'selected' : ''} onClick={() => setActivePanel('files')}>文件</button>
+          <button className={activePanel === 'params' ? 'selected' : ''} onClick={() => setActivePanel('params')}>Params</button>
+          <button className={activePanel === 'files' ? 'selected' : ''} onClick={() => setActivePanel('files')}>Files</button>
         </div>
         {activePanel === 'params' ? (
           <ParameterPanel
@@ -441,10 +445,10 @@ export function App() {
           <div className="modal" onClick={(event) => event.stopPropagation()}>
             <header>
               <strong>{preview.file.name}</strong>
-              <button onClick={() => setPreview(null)}>×</button>
+              <button onClick={() => setPreview(null)}>Close</button>
             </header>
             {preview.imageUrl ? <img src={preview.imageUrl} alt={preview.file.name} /> : <pre>{preview.content}</pre>}
-            <a href={client.getDownloadUrl(sessionId, preview.file.name)}>下载</a>
+            <a href={client.getDownloadUrl(sessionId, preview.file.name)}>Download</a>
           </div>
         </div>
       )}
@@ -452,26 +456,26 @@ export function App() {
   );
 }
 
-function MessageBubble({ message, responding }: { message: ChatMessage; responding: boolean }) {
+function MessageBubble({ message, matterViz, responding }: { message: ChatMessage; matterViz: typeof defaultMatterViz; responding: boolean }) {
   const isUser = message.role === 'user';
   return (
     <article className={isUser ? 'message user' : 'message assistant'}>
-      <div className="avatar">{isUser ? '你' : 'AI'}</div>
+      <div className="avatar">{isUser ? 'U' : 'AI'}</div>
       <div className="message-content">
-        {isUser ? <p>{message.content}</p> : <MarkdownWithVisualize content={message.content} />}
-        {responding && <span className="typing">● ● ●</span>}
+        {isUser ? <p>{message.content}</p> : <MarkdownWithVisualize content={message.content} matterViz={matterViz} />}
+        {responding && <span className="typing">...</span>}
         {!isUser && message.usage_metadata && (
-          <small className="metadata">输入 token {message.usage_metadata.prompt_tokens || 0} · 输出 token {message.usage_metadata.candidates_tokens || 0}</small>
+          <small className="metadata">杈撳叆 token {message.usage_metadata.prompt_tokens || 0} 路 杈撳嚭 token {message.usage_metadata.candidates_tokens || 0}</small>
         )}
         {!isUser && message.charge_result && (
-          <small className="metadata">光子 {message.charge_result.photon_amount || 0} · RMB {(message.charge_result.rmb_amount || 0).toFixed(2)}</small>
+          <small className="metadata">鍏夊瓙 {message.charge_result.photon_amount || 0} 路 RMB {(message.charge_result.rmb_amount || 0).toFixed(2)}</small>
         )}
       </div>
     </article>
   );
 }
 
-function MarkdownWithVisualize({ content }: { content: string }) {
+function MarkdownWithVisualize({ content, matterViz }: { content: string; matterViz: typeof defaultMatterViz }) {
   const visualizeRegex = /:::visualize\n([\s\S]*?)\n:::/g;
   const parts: Array<{ type: 'markdown' | 'visualize'; content: string }> = [];
   let cursor = 0;
@@ -483,16 +487,194 @@ function MarkdownWithVisualize({ content }: { content: string }) {
   if (cursor < content.length) parts.push({ type: 'markdown', content: content.slice(cursor) });
 
   if (!parts.length) return <ReactMarkdown>{content}</ReactMarkdown>;
-  return <>{parts.map((part, index) => part.type === 'markdown' ? <ReactMarkdown key={index}>{part.content}</ReactMarkdown> : <VisualizationFallback key={index} json={part.content} />)}</>;
+  return <>{parts.map((part, index) => part.type === 'markdown'
+    ? <ReactMarkdown key={index}>{part.content}</ReactMarkdown>
+    : <VisualizationCard key={index} json={part.content} matterViz={matterViz} />)}</>;
 }
 
-function VisualizationFallback({ json }: { json: string }) {
+function VisualizationCard({ json, matterViz }: { json: string; matterViz: typeof defaultMatterViz }) {
+  const autoOpenedRef = useRef(false);
+  const parsed = parseVisualizationPayload(json);
+  const payloadKey = parsed.payload ? JSON.stringify(parsed.payload) : '';
+  const matterVizConfigured = Boolean(matterViz.commandId || matterViz.uriTemplate);
+
+  function openMatterViz() {
+    if (!parsed.payload) return;
+    vscode?.postMessage({ type: 'openInMatterViz', payload: { visualization: parsed.payload } });
+  }
+
+  useEffect(() => {
+    if (!parsed.payload || !matterViz.autoOpen || !matterVizConfigured || autoOpenedRef.current) return;
+    autoOpenedRef.current = true;
+    openMatterViz();
+  }, [matterViz.autoOpen, matterVizConfigured, payloadKey]);
+
+  if (!parsed.payload) {
+    return <div className="visualize-box"><strong>Visualization payload</strong><pre>{parsed.error || json}</pre></div>;
+  }
+
+  const payload = parsed.payload;
+  return (
+    <div className="visualize-box">
+      <header className="visualize-header">
+        <div>
+          <strong>{payload.title || visualizationTitle(payload.kind)}</strong>
+          <small>{payload.source?.file || payload.source?.tool || payload.kind}</small>
+        </div>
+        <button type="button" onClick={openMatterViz}>MatterViz</button>
+      </header>
+      <VisualizationBody payload={payload} />
+      {!matterVizConfigured && <small>Set dptbPilot.matterViz.commandId or dptbPilot.matterViz.uriTemplate to enable handoff.</small>}
+    </div>
+  );
+}
+
+function VisualizationBody({ payload }: { payload: VisualizationPayload }) {
+  if (payload.kind === 'bz') return <BzPreview payload={payload} />;
+  if (payload.kind === 'band' || payload.kind === 'dos' || payload.kind === 'curve') return <CurvePreview payload={payload} />;
+  if (payload.kind === 'image') return <ImagePreview payload={payload} />;
+  if (payload.kind === 'table') return <TablePreview payload={payload} />;
+  if (payload.kind === 'structure') return <StructureSummary payload={payload} />;
+  return <pre>{JSON.stringify(payload.data, null, 2)}</pre>;
+}
+
+function StructureSummary({ payload }: { payload: VisualizationPayload }) {
+  const text = typeof payload.data === 'string' ? payload.data : JSON.stringify(payload.data, null, 2);
+  const lineCount = text.split(/\r?\n/).filter(Boolean).length;
+  return (
+    <div className="visualize-summary">
+      <span>Format: {String(payload.meta?.format || payload.source?.file?.split('.').pop() || 'structure')}</span>
+      <span>Lines: {lineCount}</span>
+      <pre>{text.slice(0, 1200)}</pre>
+    </div>
+  );
+}
+
+function BzPreview({ payload }: { payload: VisualizationPayload }) {
+  const data = asRecord(payload.data);
+  const vertices = Array.isArray(data.vertices) ? data.vertices as number[][] : [];
+  const edges = Array.isArray(data.edges) ? data.edges as number[][] : [];
+  const points = vertices
+    .filter((vertex) => Array.isArray(vertex) && vertex.length >= 2)
+    .map((vertex) => [Number(vertex[0]), Number(vertex[1])] as [number, number]);
+  const project = makeProjector(points, 260, 180);
+
+  return (
+    <div className="visualize-preview">
+      <svg viewBox="0 0 260 180" role="img" aria-label="Brillouin zone projection">
+        {edges.map((edge, index) => {
+          const start = vertices[edge[0]];
+          const end = vertices[edge[1]];
+          if (!start || !end) return null;
+          const [x1, y1] = project(Number(start[0]), Number(start[1]));
+          const [x2, y2] = project(Number(end[0]), Number(end[1]));
+          return <line key={index} x1={x1} y1={y1} x2={x2} y2={y2} />;
+        })}
+      </svg>
+      <small>{vertices.length} vertices, {edges.length} edges</small>
+    </div>
+  );
+}
+
+function CurvePreview({ payload }: { payload: VisualizationPayload }) {
+  const points = extractPoints(payload.data);
+  if (!points.length) return <pre>{JSON.stringify(payload.data, null, 2)}</pre>;
+
+  const project = makeProjector(points, 300, 180);
+  const path = points.map(([x, y], index) => {
+    const [px, py] = project(x, y);
+    return `${index === 0 ? 'M' : 'L'} ${px} ${py}`;
+  }).join(' ');
+
+  return (
+    <div className="visualize-preview">
+      <svg viewBox="0 0 300 180" role="img" aria-label={`${payload.kind} preview`}>
+        <path d={path} />
+      </svg>
+      <small>{points.length} points</small>
+    </div>
+  );
+}
+
+function ImagePreview({ payload }: { payload: VisualizationPayload }) {
+  const data = asRecord(payload.data);
+  const src = typeof data.url === 'string' ? data.url : typeof data.src === 'string' ? data.src : typeof payload.data === 'string' ? payload.data : '';
+  return src ? <img className="visualize-image" src={src} alt={payload.title || 'DPTB visualization'} /> : <pre>{JSON.stringify(payload.data, null, 2)}</pre>;
+}
+
+function TablePreview({ payload }: { payload: VisualizationPayload }) {
+  const data = asRecord(payload.data);
+  const rows = Array.isArray(data.rows) ? data.rows as Record<string, unknown>[] : Array.isArray(payload.data) ? payload.data as Record<string, unknown>[] : [];
+  const columns = Array.isArray(data.columns) ? data.columns.map(String) : Object.keys(rows[0] || {});
+  if (!rows.length || !columns.length) return <pre>{JSON.stringify(payload.data, null, 2)}</pre>;
+
+  return (
+    <div className="visualize-table-wrap">
+      <table className="visualize-table">
+        <thead><tr>{columns.map((column) => <th key={column}>{column}</th>)}</tr></thead>
+        <tbody>{rows.slice(0, 12).map((row, index) => <tr key={index}>{columns.map((column) => <td key={column}>{String(row[column] ?? '')}</td>)}</tr>)}</tbody>
+      </table>
+    </div>
+  );
+}
+
+function parseVisualizationPayload(json: string): { payload?: VisualizationPayload; error?: string } {
   try {
     const parsed = JSON.parse(json);
-    return <div className="visualize-box"><strong>结构可视化数据 ({parsed.format || 'unknown'})</strong><pre>{JSON.stringify(parsed.data, null, 2)}</pre></div>;
-  } catch {
-    return <div className="visualize-box"><strong>结构可视化数据</strong><pre>{json}</pre></div>;
+    if (parsed && typeof parsed === 'object' && typeof parsed.kind === 'string') {
+      return { payload: { kind: parsed.kind, title: parsed.title, source: parsed.source, data: parsed.data, meta: parsed.meta } as VisualizationPayload };
+    }
+    if (parsed && typeof parsed === 'object' && typeof parsed.format === 'string') {
+      const format = parsed.format.toLowerCase();
+      const kind = format === 'bz' ? 'bz' : 'structure';
+      return { payload: { kind, title: kind === 'bz' ? 'Brillouin Zone' : 'Structure', data: parsed.data, meta: { format } } };
+    }
+    return { error: JSON.stringify(parsed, null, 2) };
+  } catch (error) {
+    return { error: errorMessage(error) };
   }
+}
+
+function visualizationTitle(kind: VisualizationPayload['kind']) {
+  return {
+    structure: 'Structure',
+    bz: 'Brillouin Zone',
+    band: 'Band Structure',
+    dos: 'Density of States',
+    curve: 'Curve',
+    image: 'Image',
+    table: 'Table',
+    text: 'Text'
+  }[kind];
+}
+
+function extractPoints(data: unknown): [number, number][] {
+  const record = asRecord(data);
+  const source = Array.isArray(data) ? data : Array.isArray(record.points) ? record.points : Array.isArray(record.series) ? record.series : [];
+  return source.map((item: unknown, index: number) => {
+    if (Array.isArray(item)) return [Number(item[0]), Number(item[1])] as [number, number];
+    const point = asRecord(item);
+    return [Number(point.x ?? index), Number(point.y ?? point.value)] as [number, number];
+  }).filter(([x, y]) => Number.isFinite(x) && Number.isFinite(y));
+}
+
+function makeProjector(points: [number, number][], width: number, height: number) {
+  const xs = points.map(([x]) => x);
+  const ys = points.map(([, y]) => y);
+  const minX = Math.min(...xs, 0);
+  const maxX = Math.max(...xs, 1);
+  const minY = Math.min(...ys, 0);
+  const maxY = Math.max(...ys, 1);
+  const pad = 16;
+
+  return (x: number, y: number): [number, number] => [
+    pad + ((x - minX) / Math.max(maxX - minX, 1)) * (width - pad * 2),
+    height - pad - ((y - minY) / Math.max(maxY - minY, 1)) * (height - pad * 2)
+  ];
+}
+
+function asRecord(value: unknown): Record<string, any> {
+  return value && typeof value === 'object' ? value as Record<string, any> : {};
 }
 
 function ParameterPanel(props: {
@@ -515,7 +697,7 @@ function ParameterPanel(props: {
 
   return (
     <div className="panel-content">
-      <label>运行模式</label>
+      <label>Execution mode</label>
       <select value={props.executionMode} onChange={(event) => props.setExecutionMode(event.target.value as ExecutionMode)}>
         <option value="Local">Local</option>
         <option value="Remote">Remote</option>
@@ -523,17 +705,17 @@ function ParameterPanel(props: {
 
       {props.executionMode === 'Remote' && (
         <section className="remote-machines">
-          <label>远程机器
+          <label>Remote machine
             <select value={props.selectedMachineId} onChange={(event) => props.setSelectedMachineId(event.target.value)}>
-              <option value="">选择远程机器</option>
+              <option value="">Select a remote machine</option>
               {props.remoteMachines.map((machine) => <option key={machine.id} value={machine.id}>{machine.name} ({machine.type})</option>)}
             </select>
           </label>
           <div className="inline-row remote-actions">
-            <button type="button" onClick={() => props.addRemoteMachine('Bohrium')}>添加 Bohrium</button>
-            <button type="button" onClick={() => props.addRemoteMachine('Slurm')}>添加 Slurm</button>
+            <button type="button" onClick={() => props.addRemoteMachine('Bohrium')}>Add Bohrium</button>
+            <button type="button" onClick={() => props.addRemoteMachine('Slurm')}>Add Slurm</button>
           </div>
-          {selectedMachine && <small className="selected-machine">当前选择：{selectedMachine.name} ({selectedMachine.type})</small>}
+          {selectedMachine && <small className="selected-machine">Selected: {selectedMachine.name} ({selectedMachine.type})</small>}
           {props.remoteMachines.map((machine) => (
             <details key={machine.id} open={machine.id === props.selectedMachineId}>
               <summary>{machine.name} ({machine.type})</summary>
@@ -541,7 +723,9 @@ function ParameterPanel(props: {
                 try {
                   const config = JSON.parse(event.target.value);
                   props.setRemoteMachines((old) => old.map((item) => item.id === machine.id ? { ...item, config } : item));
-                } catch {}
+                } catch {
+                  // ignore invalid JSON while editing
+                }
               }} />
             </details>
           ))}
@@ -549,11 +733,11 @@ function ParameterPanel(props: {
       )}
 
       <div className="inline-row">
-        <button className={props.modifyMode === 'individual' ? 'selected' : ''} onClick={() => props.setModifyMode('individual')}>表单</button>
+        <button className={props.modifyMode === 'individual' ? 'selected' : ''} onClick={() => props.setModifyMode('individual')}>Form</button>
         <button className={props.modifyMode === 'json' ? 'selected' : ''} onClick={() => props.setModifyMode('json')}>JSON</button>
       </div>
 
-      {!props.schema ? <div className="empty-state">等待 Agent 请求参数确认。</div> : (
+      {!props.schema ? <div className="empty-state">Waiting for an agent schema.</div> : (
         <form onSubmit={(event) => { event.preventDefault(); void props.submitParams(new FormData(event.currentTarget)); }}>
           <h3>{props.schema.name}</h3>
           {props.schema.description && <p>{props.schema.description}</p>}
@@ -564,8 +748,8 @@ function ParameterPanel(props: {
             return <label key={key}>{prop.title || key}<small>{prop.type}</small><input name={key} defaultValue={String(prop.agent_input ?? prop.default ?? '')} /></label>;
           })}
           <div className="inline-row">
-            <button className="primary" type="submit">提交参数</button>
-            <button type="button" onClick={() => void props.terminateExecution()}>终止执行</button>
+            <button className="primary" type="submit">Submit</button>
+            <button type="button" onClick={() => void props.terminateExecution()}>Stop</button>
           </div>
         </form>
       )}
@@ -575,7 +759,26 @@ function ParameterPanel(props: {
 
 function FilePanel({ files, previewFile, deleteFile, downloadUrl }: { files: FileInfo[]; previewFile: (file: FileInfo) => void; deleteFile: (file: FileInfo) => void; downloadUrl: (file: FileInfo) => string }) {
   const groups = groupFiles(files);
-  return <div className="panel-content">{Object.entries(groups).map(([group, groupFiles]) => groupFiles.length ? <section key={group}><h3>{group} ({groupFiles.length})</h3>{groupFiles.map((file) => <div className="file-row" key={file.name}><button onClick={() => void previewFile(file)}>{file.name}<small>{(file.size / 1024).toFixed(1)} KB</small></button><a href={downloadUrl(file)}>下载</a><button onClick={() => void deleteFile(file)}>删除</button></div>)}</section> : null)}{!files.length && <div className="empty-state">暂无文件。</div>}</div>;
+  return (
+    <div className="panel-content">
+      {Object.entries(groups).map(([group, groupFiles]) => groupFiles.length ? (
+        <section key={group}>
+          <h3>{group} ({groupFiles.length})</h3>
+          {groupFiles.map((file) => (
+            <div className="file-row" key={file.name}>
+              <button onClick={() => void previewFile(file)}>
+                {file.name}
+                <small>{(file.size / 1024).toFixed(1)} KB</small>
+              </button>
+              <a href={downloadUrl(file)}>Download</a>
+              <button onClick={() => void deleteFile(file)}>Delete</button>
+            </div>
+          ))}
+        </section>
+      ) : null)}
+      {!files.length && <div className="empty-state">No files yet.</div>}
+    </div>
+  );
 }
 
 function mergeFinalContent(existing: string, finalContent: string) {
@@ -714,3 +917,5 @@ function readLocal<T>(key: string, fallback: T): T {
 function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
+
+

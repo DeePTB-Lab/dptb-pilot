@@ -1,6 +1,6 @@
 import * as path from 'node:path';
 import * as vscode from 'vscode';
-import type { HostToWebviewMessage, WebviewToHostMessage } from './shared/types';
+import type { HostToWebviewMessage, VisualizationPayload, WebviewToHostMessage } from './shared/types';
 
 const CONFIG_SECTION = 'dptbPilot';
 const VIEW_TYPE = 'dptbPilot.chat';
@@ -54,7 +54,12 @@ class DptbPilotPanel {
       payload: {
         serverUrl: config.get<string>('serverUrl') || 'http://localhost:8000',
         sessionId: config.get<string>('sessionId') || '',
-        extensionUri: this.context.extensionUri.toString()
+        extensionUri: this.context.extensionUri.toString(),
+        matterViz: {
+          commandId: config.get<string>('matterViz.commandId') || '',
+          uriTemplate: config.get<string>('matterViz.uriTemplate') || '',
+          autoOpen: config.get<boolean>('matterViz.autoOpen') || false
+        }
       }
     });
   }
@@ -86,6 +91,9 @@ class DptbPilotPanel {
         this.panel.webview.postMessage({ type: 'secret', payload: { requestId: message.payload.requestId, value } });
         break;
       }
+      case 'openInMatterViz':
+        await openVisualizationInMatterViz(message.payload.visualization);
+        break;
     }
   }
 
@@ -178,6 +186,9 @@ export function activate(context: vscode.ExtensionContext): void {
       const panel = DptbPilotPanel.createOrShow(context);
       void panel.uploadCurrentFile();
     }),
+    vscode.commands.registerCommand('dptbPilot.openVisualizationInMatterViz', async (visualization?: VisualizationPayload) => {
+      await openVisualizationInMatterViz(visualization);
+    }),
     vscode.window.registerUriHandler({
       handleUri: async (uri: vscode.Uri) => {
         const params = new URLSearchParams(uri.query);
@@ -203,6 +214,39 @@ export function activate(context: vscode.ExtensionContext): void {
 }
 
 export function deactivate(): void {}
+
+async function openVisualizationInMatterViz(visualization?: VisualizationPayload): Promise<void> {
+  if (!visualization) {
+    void vscode.window.showWarningMessage('No DPTB visualization payload is available to open in MatterViz.');
+    return;
+  }
+
+  const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
+  const commandId = config.get<string>('matterViz.commandId')?.trim();
+  const uriTemplate = config.get<string>('matterViz.uriTemplate')?.trim();
+
+  if (commandId) {
+    try {
+      await vscode.commands.executeCommand(commandId, visualization);
+      return;
+    } catch (error) {
+      void vscode.window.showWarningMessage(`MatterViz command failed: ${errorMessage(error)}`);
+    }
+  }
+
+  if (uriTemplate) {
+    const payload = encodeURIComponent(JSON.stringify(visualization));
+    const uri = vscode.Uri.parse(uriTemplate.replace('{payload}', payload));
+    await vscode.env.openExternal(uri);
+    return;
+  }
+
+  void vscode.window.showInformationMessage('Configure dptbPilot.matterViz.commandId or dptbPilot.matterViz.uriTemplate to enable MatterViz handoff.');
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
 
 function getNonce(): string {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';

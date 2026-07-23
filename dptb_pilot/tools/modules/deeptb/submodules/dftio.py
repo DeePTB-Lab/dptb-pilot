@@ -13,6 +13,7 @@ from dptb_pilot.tools.modules.util.comm import generate_work_path
 def _dftio_parse_abacus(
         work_root: Path,
         prefix: str = "abacus",
+        format: str = "dat",
         output_dir_name: str = "parse_result",
         out_hamiltonian: bool = False,
         out_overlap: bool = False,
@@ -47,11 +48,12 @@ def _dftio_parse_abacus(
     num_entries = len(parser.raw_datas)
 
     for idx in tqdm(range(num_entries)):
-        parser.write_hdf5(
+        parser.write(
             idx=int(idx),
+            format=format,
             hamiltonian=out_hamiltonian,
             overlap=out_overlap,
-            outroot=output_dir_name,
+            outroot=work_root / output_dir_name,
             eigenvalue=out_eigenvalue,
             density_matrix=out_density_matrix,
             band_index_min=0

@@ -133,65 +133,343 @@ def find_fermi_level(eigenvalues, n_atoms, valence_electrons=4):
 from pathlib import Path
 import numpy as np
 
-def smart_band_gap(eig, pseudo_fermi_level):
+import numpy as np
+
+import numpy as np
+
+
+def smart_band_gap(eig, efermi, atol=1e-3, max_diff=1.0):
     """
-    Estimate a band gap by selecting valence/conduction bands around a pseudo Fermi level.
+    根据能带覆盖区间自动寻找距离费米能级最近的带隙。
+    自适应处理不同 k 点能带序号错位/乱序的情况，并具备高级安全警报机制。
 
     Parameters
     ----------
-    eig : numpy.ndarray
-        Eigenvalue array with shape ``(nk, nbands)``.
-    pseudo_fermi_level : float
-        Approximate Fermi level used to identify the valence band by band-center
-        ordering.
+    eig : array_like
+        能带数据，shape=(Nk, Nband)
+    efermi : float
+        费米能级
+    atol : float
+        判断区间是否连续的容差（单位 eV），即判定为带隙的最小宽度
+    max_diff : float
+        费米能级周围的安全窗口半径（单位 eV），在此窗口外的带隙将触发风险评估
 
     Returns
     -------
-    dict
-        Band-gap information including ``band_gap`` and, when available, VBM/CBM
-        values and band indices.
+    dict or None
+        包含带隙信息的字典。若不存在任何带隙，则返回 None。
     """
+    eigenvalues = np.asarray(eig)
 
-    nk, nb = eig.shape
+    if eigenvalues.ndim != 2:
+        raise ValueError("eigenvalues should have shape (Nk, Nband)")
 
-    # 每条带平均能量
-    band_center = eig.mean(axis=0)
+    # 1. 将所有 k 点的本征值打平并进行全局升序排序
+    flat_energies = np.sort(eigenvalues.flatten())
 
-    # 找到 pseudo Ef 下方最近 band
-    vb_idx = np.where(band_center < pseudo_fermi_level)[0]
+    # 记录全局能量边界，用于后续屏蔽边缘带隙
+    global_min = flat_energies[0]
+    global_max = flat_energies[-1]
+    edge_buffer = 0.2
 
-    if len(vb_idx) == 0:
-        return {"band_gap": 0.0}
+    # 2. 计算相邻本征值之间的能量差
+    diffs = np.diff(flat_energies)
 
-    vb_idx = vb_idx[-1]
+    # 3. 找出所有大于容差 atol 的间隙索引
+    gap_indices = np.where(diffs > atol)[0]
 
-    if vb_idx + 1 >= nb:
-        return {"band_gap": 0.0}
+    # 如果没有任何间隙，使用更细的带隙搜索方式
+    if len(gap_indices) == 0:
+        return narrow_band_gap(eig, efermi)
 
-    val_band = eig[:, vb_idx]
-    cond_band = eig[:, vb_idx + 1]
+    all_gaps = []
+    biggest_gap = None
+    max_gap_width = 0.0
 
-    vbm = val_band.max()
-    cbm = cond_band.min()
+    # 4. 收集所有带隙，并定位距离费米能级最近的带隙
+    for idx in gap_indices:
+        lower = float(flat_energies[idx])
+        if lower > efermi + max_diff:
+            continue
+        upper = float(flat_energies[idx + 1])
+        if upper < efermi - max_diff:
+            continue
+        all_gaps.append((lower, upper))
 
-    gap = cbm - vbm
+        # # 以带隙中心到费米能级的距离作为“最近”的判定依据
+        # gap_center = (lower + upper) / 2.0
+        # dist_to_center = abs(gap_center - efermi)
+        #
+        # if dist_to_center < min_dist_to_center:
+        #     min_dist_to_center = dist_to_center
+        #     closest_gap = (lower, upper)
 
-    if gap < 0:
-        gap = 0.0
+        # 以带隙大小作为判定依据
+        gap_width = upper - lower
+        if gap_width > max_gap_width:
+            max_gap_width = gap_width
+            biggest_gap = (lower, upper)
+
+    # 提取目标带隙的核心参数
+    gap_lower, gap_upper = biggest_gap
+    gap_width = gap_upper - gap_lower
+    gap_center = (gap_lower + gap_upper) / 2.0
+
+    # 计算费米能级到带隙的物理距离以及是否在带隙内部
+    if gap_lower <= efermi <= gap_upper:
+        distance_to_fermi = 0.0
+        fermi_inside_gap = True
+    else:
+        distance_to_fermi = float(min(abs(gap_lower - efermi), abs(gap_upper - efermi)))
+        fermi_inside_gap = False
+
+    # 5. 升级版风险检查与单次最危险警报机制
+    risky = False
+    dangerous_gaps = []
+
+    for g_lower, g_upper in all_gaps:
+        # 条件 A: 判断该带隙是否在 efermi ± max_diff eV 的窗口外面
+        outside_window = (g_upper < efermi - max_diff) or (g_lower > efermi + max_diff)
+        if not outside_window:
+            continue
+
+        # 条件 B: 屏蔽能带最外侧边缘 0.2 eV 内的带隙
+        near_edge = (g_lower < global_min + edge_buffer) or (g_upper > global_max - edge_buffer)
+        if near_edge:
+            continue
+
+        # 条件 C: 只有当该带隙大小大于当前找到的目标带隙时，才认为具有威胁
+        g_width = g_upper - g_lower
+        if g_width > gap_width:
+            # 计算该危险带隙到费米能级的距离
+            g_dist = float(min(abs(g_lower - efermi), abs(g_upper - efermi)))
+            dangerous_gaps.append({
+                "lower": g_lower,
+                "upper": g_upper,
+                "width": g_width,
+                "distance": g_dist
+            })
+
+    # 如果存在通过筛选的危险带隙，则触发警报
+    if len(dangerous_gaps) > 0:
+        risky = True
+        # 按照带隙宽度从大到小排序，筛选出“最危险”的那个
+        most_dangerous = max(dangerous_gaps, key=lambda x: x["width"])
+
+        print(f"[⚠️ WARNING] 在设定窗口外检测到更宽的潜在带隙！请人工核对费米能级是否准确。")
+        print(f"    - 最险带隙大小: {most_dangerous['width']:.4f} eV")
+        print(f"    - 距费米能级距离: {most_dangerous['distance']:.4f} eV")
+        print(f"    - 带隙能量区间: [{most_dangerous['lower']:.4f}, {most_dangerous['upper']:.4f}] eV")
 
     return {
-        "band_gap": float(gap),
-        "vbm": float(vbm),
-        "cbm": float(cbm),
-        "vbm_band_index": int(vb_idx),
-        "cbm_band_index": int(vb_idx + 1),
+        "gap_lower": float(gap_lower),
+        "gap_upper": float(gap_upper),
+        "gap_width": float(gap_width),
+        "gap_center": float(gap_center),
+        "distance_to_fermi": distance_to_fermi,
+        "fermi_inside_gap": fermi_inside_gap,
+        "all_gaps": all_gaps,
+        "risky": risky
     }
 
+def narrow_band_gap(eig, efermi):
+    """
+    自适应能带结构计算函数。
+    1. 优先尝试全局排序法寻找标准半导体大带隙。
+    2. 若带隙小于容差 atol，自动切换为针对金属管/准金属管的本地邻域排他性查找算法。
+
+    Parameters
+    ----------
+    eig : array_like
+        能带数据，shape=(Nk, Nband)
+    efermi : float
+        费米能级
+    atol : float
+        判定为标准半导体大带隙的容差（单位 eV）
+    title_name : str
+        绘制能带图时的标题名称（供用户自行传入）
+    """
+    eigenvalues = eig
+    if eigenvalues.ndim != 2:
+        raise ValueError("eigenvalues should have shape (Nk, Nband)")
+
+    Nk, Nband = eigenvalues.shape
+
+    # =========================================================================
+    # 算法二：进入金属管/微带隙管专用精准定位算法
+    # =========================================================================
+    print(f"[🔵 METALLIC/SMALL-GAP] 全局带隙低于容差，启动金属管特异性局部排他性搜索...")
+
+    E_min, E_max, g_upper, g_lower, is_valid, final_k, g_width  = None, None, None, None, None, None, None
+
+    # =========================================================================
+    # 步骤 0：准备搜索在最后一个 k 点（右边界高对称点）的费米能级位置能带以及其上其下向上向下2个能带
+    # =========================================================================
+    k_start = Nk - 1
+    k_energies = np.sort(eigenvalues[k_start])
+
+    # 找到插入位置
+    idx = np.searchsorted(k_energies, efermi)
+
+    # 左边最近三个（从近到远）
+    left = k_energies[max(0, idx - 3):idx]
+
+    # 右边最近三个
+    right = k_energies[idx:min(len(k_energies), idx + 3)]
+
+    # 按要求返回：小的三个 + 大的三个
+    ab_list = np.concatenate((left, right))
+
+    checking_list = [[2, 3], [1, 2], [3, 4], [0, 1], [4, 5]]
+
+    for checking in checking_list:
+        # =========================================================================
+        # 步骤 1：在最后一个 k 点（右边界高对称点）初始化 a 和 b
+        # =========================================================================
+
+        # 初始化：a 为 0 以上的最小值（导带底），b 为 0 以下的最大值（价带顶）
+        a = ab_list[checking[1]]
+        b = ab_list[checking[0]]
+
+        final_k = k_start
+        final_a = a
+        final_b = b
+
+        # =========================================================================
+        # 步骤 2：由右向左（从 Nk-2 到 0）逐格滑动追踪
+        # =========================================================================
+        for k in range(k_start - 1, -1, -1):
+            energies = eigenvalues[k]
+
+            # 查找当前 k 点：在 a, b之间的能量点
+            band_mid = (a + b) / 2
+            cand_a = energies[energies > band_mid]
+            cand_b = energies[energies < band_mid]
+
+            # 如果任一侧找不到能继续延伸的平滑能带，触发“搜索不到”停止条件
+            if len(cand_a) == 0 or len(cand_b) == 0:
+                print(f"[ℹ️ INFO] 在 k={k} 处因无法继续向下/向上延展而停止追踪。")
+                break
+
+            # 取最接近能量中心的位置
+            next_a = cand_a[np.argmin(cand_a)]
+            next_b = cand_b[np.argmin(-cand_b)]
+
+            # 核心停止条件：如果两条追踪能带相交或发生了能量倒挂（对应 X 形交点）
+            if next_a <= next_b or (next_a > a and next_b < b):
+                final_k = k + 1
+                final_a = a
+                final_b = b
+                print(f"[🎯 TRACKING] 在 k={final_k} 处成功捕捉到能带线性交叉位置！停止追踪。")
+                break
+
+            # 未相交则更新状态，继续向左推进
+            a = next_a
+            b = next_b
+            final_k = k
+            final_a = a
+            final_b = b
+
+        # 确定最终锁定的目标本地带隙区间
+        g_lower = min(final_a, final_b)
+        g_upper = max(final_a, final_b)
+        g_width = g_upper - g_lower
+        g_center = (g_lower + g_upper) / 2.0
+
+        # =========================================================================
+        # 步骤 3：在最终位置执行 k±2 动态展宽计算与全谱排他性校验
+        # =========================================================================
+        neighbors = [final_k - 2, final_k - 1, final_k + 1, final_k + 2]
+        valid_neighbors = [nb for nb in neighbors if 0 <= nb < Nk]  # 防止索引越界
+
+        val_unders = []
+        val_aboves = []
+
+        for nb in valid_neighbors:
+            nb_energies = eigenvalues[nb]
+            under = nb_energies[nb_energies <= g_center]
+            above = nb_energies[nb_energies > g_center]
+
+            if len(under) > 0: val_unders.append(np.max(under))
+            if len(above) > 0: val_aboves.append(np.min(above))
+
+        E_min = np.min(val_unders) if len(val_unders) > 0 else g_lower
+        E_max = np.max(val_aboves) if len(val_aboves) > 0 else g_upper
+
+        # 全局排他性检查：确保除 [k-3, k+3] 区域外，全谱没有任何其他能带落在 [E_min, E_max] 内
+        outside_ks = [i for i in range(Nk) if i < final_k - 3 or i > final_k + 3]
+        is_valid = True
+
+        for ok in outside_ks:
+            ok_energies = eigenvalues[ok]
+            if np.any((ok_energies > E_min) & (ok_energies < E_max)):
+                is_valid = False
+                break
+
+        # 根据校验状态输出控制台日志
+        if not is_valid:
+            print(f"[⚠️ WARNING] 校验未通过！在计算展宽区间 [{E_min:.4f}, {E_max:.4f}] eV 内存在其他 k 点的能带污染。")
+            print(f"            仍将强制绘制图片，请在图面上观察黄色区间内被污染的红色散点。")
+        else:
+            print(f"[🎉 SUCCESS] 目标交叉带隙通过全部验证！区间纯净无污染。")
+
+        print(f"    - 精确锁定的 k 点索引: {final_k}")
+        print(f"    - 该处局部带隙大小: {g_width:.4f} eV")
+        print(f"    - 动态能量展宽墙: [{E_min:.4f}, {E_max:.4f}] eV")
+        if is_valid:
+            break
+
+    # =========================================================================
+    # 步骤 4：数据可视化绘制（无论成功与否，强制执行）
+    # =========================================================================
+    plt.figure(figsize=(8, 6), dpi=150)
+
+    # 1. 用红色散点图绘制全能带
+    for k in range(Nk):
+        x_vals = np.full(Nband, k)
+        plt.scatter(x_vals, eigenvalues[k], color="red", s=6, zorder=3)
+
+    # 2. 绘制黄色长方体：纵向为 k±2 包络出的外部动态能量展宽 [E_min, E_max]
+    plt.axhspan(E_min, E_max, xmin=0, xmax=1,
+                color="yellow", alpha=0.3, label="Energy Window (k±2)", zorder=1)
+
+    # 3. 绘制绿色长方体：纵向为核心锁定的最终本地带隙 [g_lower, g_upper]
+    plt.axhspan(g_lower, g_upper, xmin=0, xmax=1,
+                color="green", alpha=0.5, label="Target Local Gap", zorder=2)
+
+    # 4. 图面基础美化与输出
+    plt.axhline(efermi, color="black", linestyle="--", linewidth=1, label="Fermi Level")
+    plt.xlim(0, Nk - 1)
+    plt.xlabel("k-point Index")
+    plt.ylabel("Energy (eV)")
+
+    # 在标题中动态加入状态后缀，一眼识别图像是否有效
+    status_suffix = "VERIFIED" if is_valid else "POLLUTED"
+    plt.title(f"Band Structure  ({status_suffix})")
+
+    plt.legend(loc="upper right")
+    plt.tight_layout()
+    plt.show()
+
+    # =========================================================================
+    # 步骤 5：最终根据验证状态返回不同的字典类型，方便上层业务判断
+    # =========================================================================
+    return {
+        "type": "backtracked_metallic" if is_valid else "polluted_metallic",
+        "is_valid": is_valid,
+        "k_target": final_k,
+        "gap_lower": float(g_lower),
+        "gap_upper": float(g_upper),
+        "gap_width": float(g_width),
+        "energy_window_min": float(E_min),
+        "energy_window_max": float(E_max)
+    }
 
 def _band_gap(band_structure_file_path: Path,
               fermi_level = None,
               n_atoms = None,
-              pseudo_fermi_level: float = None):
+              pseudo_fermi_level: bool = False,
+              smart_band_gap_atol: float = None):
     """
     Calculate the band gap from a DeePTB band-structure ``.npz`` or ``.npy`` file.
 
@@ -214,8 +492,6 @@ def _band_gap(band_structure_file_path: Path,
         values and band indices.
     """
 
-    assert not (fermi_level and pseudo_fermi_level), "费米能级与粗费米能级不该同时输入！"
-
     data_raw = np.load(band_structure_file_path, allow_pickle=True)
 
     # ---------- 1. 统一数据结构 ----------
@@ -236,9 +512,6 @@ def _band_gap(band_structure_file_path: Path,
     eig = data["eigenvalues"]
 
     # ---------- 3. 处理费米能级 ----------
-    if fermi_level is None:
-        fermi_level = pseudo_fermi_level
-
     if fermi_level is None:
         # npz: fermi_level
         # npy: E_fermi
@@ -274,7 +547,7 @@ def _band_gap(band_structure_file_path: Path,
         return {"band_gap": cbm - vbm}
     else:
         # 智能获取能带
-        return smart_band_gap(eig, pseudo_fermi_level)
+        return smart_band_gap(eig, fermi_level, smart_band_gap_atol)
 
 def _band_predict(
         model_file_path: Path,
@@ -283,7 +556,6 @@ def _band_predict(
         nel_atom: Dict[str, int],
         kmesh: str = None,
         override_overlap: Path = None,
-        eig_solver: str = "numpy",
         smearing_method: str = "FD",
         sigma_val: float = None,
         work_path: str = "."
@@ -334,12 +606,11 @@ def _band_predict(
         else:
             kmesh = [5,5,5]
         fermi_level = tbsystem.get_efermi(kmesh=kmesh,
-                                          eig_solver=eig_solver,
                                           smearing_method=smearing_method,
                                           sigma_val=sigma_val)
 
         tbsystem.band.set_kpath(**kpath_config)
-        band_data = tbsystem.band.compute(eig_solver=eig_solver)
+        band_data = tbsystem.band.compute()
 
         import time
         timestamp = int(time.time())

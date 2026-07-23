@@ -38,6 +38,7 @@ import { useApp } from '../../contexts/AppContext';
 import FilePanel from '../FilePanel';
 import ParamPanel from '../ParamPanel';
 import SessionPanel from '../SessionPanel';
+import WorkflowPanel from '../WorkflowPanel';
 import { translations } from '../../utils/i18n';
 
 const { Header, Content, Sider } = Layout;
@@ -218,6 +219,19 @@ function Chat() {
       });
     }
   }, [activeTab, actions, rightSidebarCollapsed, leftSidebarCollapsed]);
+
+  useEffect(() => {
+    if (state.pendingWorkflowPlan) {
+      setActiveTab('workflow');
+      if (rightSidebarCollapsed) {
+        const isMobile = window.innerWidth <= 768;
+        if (isMobile && !leftSidebarCollapsed) {
+          setLeftSidebarCollapsed(true);
+        }
+        setRightSidebarCollapsed(false);
+      }
+    }
+  }, [state.pendingWorkflowPlan, rightSidebarCollapsed, leftSidebarCollapsed]);
 
   const handleUpload = async (file: File) => {
     if (!state.userId) {
@@ -883,10 +897,28 @@ function Chat() {
                   >
                     {t.files}
                   </div>
+                  <div
+                    onClick={() => setActiveTab('workflow')}
+                    style={{
+                      flex: 1,
+                      textAlign: 'center',
+                      padding: '6px 0',
+                      borderRadius: '6px',
+                      fontSize: '13px',
+                      fontWeight: 500,
+                      cursor: 'pointer',
+                      transition: 'all 0.3s ease',
+                      backgroundColor: activeTab === 'workflow' ? '#2563eb' : 'transparent',
+                      color: activeTab === 'workflow' ? 'white' : '#94a3b8',
+                      boxShadow: activeTab === 'workflow' ? '0 1px 2px 0 rgba(0, 0, 0, 0.05)' : 'none'
+                    }}
+                  >
+                    Workflow
+                  </div>
                 </div>
 
                 <div style={{ flex: 1, overflowY: 'auto' }}>
-                  {activeTab === 'params' ? <ParamPanel /> : <FilePanel />}
+                  {activeTab === 'params' ? <ParamPanel /> : activeTab === 'workflow' ? <WorkflowPanel /> : <FilePanel />}
                 </div>
               </div>
             )}

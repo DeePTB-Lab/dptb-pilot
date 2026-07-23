@@ -23,9 +23,7 @@ dependencies = [
     "typing-extensions",
     "pymatgen",
     "torch==2.5.0",
-    "torch-scatter>=2.1.2",
     "httpx[socks]",
-    "dptb",
     "dpdata"
 ]
 

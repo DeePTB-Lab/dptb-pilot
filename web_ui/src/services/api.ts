@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { LoginRequest, LoginResponse, FileInfo, ToolSchema, WSMessage, AppConfig, ChatMessage, ModifyParamsRequest, TerminateExecutionRequest, TerminateExecutionResponse } from '../types';
+import type { LoginRequest, LoginResponse, FileInfo, ToolSchema, WSMessage, AppConfig, ChatMessage, ModifyParamsRequest, TerminateExecutionRequest, TerminateExecutionResponse, WorkflowPlan, WorkflowPlanDecisionRequest } from '../types';
 
 // 强制使用相对路径，确保通过Vite代理
 const API_BASE_URL = '/api';
@@ -108,6 +108,16 @@ export const apiService = {
   // 获取当前工具参数schema
   async getCurrentSchema(sessionId: string): Promise<{ schema: ToolSchema }> {
     const response = await api.get(`/schema/${sessionId}`);
+    return response.data;
+  },
+
+  async getCurrentWorkflowPlan(sessionId: string): Promise<{ workflow_plan: WorkflowPlan }> {
+    const response = await api.get(`/workflow-plan/${sessionId}`);
+    return response.data;
+  },
+
+  async decideWorkflowPlan(request: WorkflowPlanDecisionRequest): Promise<{ message: string; decision: string; workflow_plan?: WorkflowPlan }> {
+    const response = await api.post('/workflow-plan/decision', request);
     return response.data;
   },
 

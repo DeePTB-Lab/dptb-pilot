@@ -6,7 +6,8 @@ import {
   FileInfo,
   ModifyMode,
   ToolSchema,
-  ModifyParamsRequest
+  ModifyParamsRequest,
+  WorkflowPlan
 } from '../types';
 import { apiService, wsService } from '../services/api';
 import { message } from 'antd';
@@ -28,6 +29,7 @@ type AppAction =
   | { type: 'UPDATE_STREAMING_RESPONSE'; payload: string }
   | { type: 'SET_RESPONDING'; payload: boolean }
   | { type: 'SET_PENDING_TOOL_RESPONSE'; payload: string }
+  | { type: 'SET_PENDING_WORKFLOW_PLAN'; payload: WorkflowPlan | null }
   | { type: 'SET_LANGUAGE'; payload: 'zh' | 'en' }
   | { type: 'SET_CLIENT_NAME'; payload: string };
 
@@ -46,6 +48,7 @@ const initialState: AppState = {
   error: null,
   responding: false,
   pendingToolResponse: '',
+  pendingWorkflowPlan: null,
   language: 'zh',
 };
 
@@ -163,6 +166,9 @@ function appReducer(state: AppState, action: AppAction): AppState {
     case 'SET_PENDING_TOOL_RESPONSE':
       return { ...state, pendingToolResponse: action.payload };
 
+    case 'SET_PENDING_WORKFLOW_PLAN':
+      return { ...state, pendingWorkflowPlan: action.payload };
+
     case 'SET_LANGUAGE':
       return { ...state, language: action.payload };
 
@@ -187,6 +193,8 @@ interface AppContextActions {
   uploadFiles: (files: File[]) => Promise<void>;
   deleteFile: (filename: string) => Promise<void>;
   getCurrentSchema: () => Promise<ToolSchema | null>;
+  getCurrentWorkflowPlan: () => Promise<WorkflowPlan | null>;
+  decideWorkflowPlan: (decision: 'approved' | 'rejected' | 'pilot_review') => Promise<void>;
   modifyParameters: (request: ModifyParamsRequest) => Promise<void>;
   terminateExecution: () => Promise<void>;
   toggleLanguage: () => void;
@@ -392,6 +400,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
             if (lastMessage && lastMessage.role === 'assistant') {
               dispatch({ type: 'SET_PENDING_TOOL_RESPONSE', payload: lastMessage.content });
             }
+            break;
+          case 'workflow_plan_required':
+            dispatch({ type: 'SET_PENDING_WORKFLOW_PLAN', payload: message.workflow_plan || null });
             break;
         }
       };
@@ -734,6 +745,41 @@ export function AppProvider({ children }: { children: ReactNode }) {
       } catch (error) {
         console.error('获取参数schema失败:', error);
         return null;
+      }
+    },
+
+    getCurrentWorkflowPlan: async () => {
+      if (!state.userId) return null;
+
+      try {
+        const { workflow_plan } = await apiService.getCurrentWorkflowPlan(state.userId);
+        return workflow_plan && Object.keys(workflow_plan).length > 0 ? workflow_plan : null;
+      } catch (error) {
+        console.error('Failed to get workflow plan:', error);
+        return null;
+      }
+    },
+
+    decideWorkflowPlan: async (decision: 'approved' | 'rejected' | 'pilot_review') => {
+      if (!state.userId) return;
+
+      try {
+        const response = await apiService.decideWorkflowPlan({ session_id: state.userId, decision });
+        if (decision === 'pilot_review') {
+          dispatch({ type: 'SET_PENDING_WORKFLOW_PLAN', payload: response.workflow_plan || null });
+          message.success('Pilot review completed.');
+          return;
+        }
+
+        dispatch({ type: 'SET_PENDING_WORKFLOW_PLAN', payload: null });
+        if (decision === 'approved') {
+          message.success('Workflow approved. Pilot is starting execution.');
+        } else {
+          message.info('Workflow rejected.');
+          dispatch({ type: 'SET_RESPONDING', payload: false });
+        }
+      } catch (error) {
+        dispatch({ type: 'SET_ERROR', payload: error instanceof Error ? error.message : 'Workflow review failed' });
       }
     },
 

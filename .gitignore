@@ -65,6 +65,9 @@ workspace/**/sessions.json
 *.egg-info/
 reproduce_*.py
 test_generated_*
+my_work
+C40*
+nul
 
 # Model
 *.pth
@@ -81,3 +84,7 @@ test_generated_*
 
 # vscode extension package
 .vsix
+
+# other packages
+negfflow
+*.zip

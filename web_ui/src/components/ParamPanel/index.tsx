@@ -360,6 +360,11 @@ function ParamPanel() {
 
       if (currentSchema.input_schema?.properties) {
         Object.entries(currentSchema.input_schema.properties).forEach(([key, prop]) => {
+          const generatedProp = generateExecutorAndStorage(key, prop);
+          if (generatedProp) {
+            (modifiedSchema.input_schema.properties as any)[key] = generatedProp;
+            return;
+          }
           // 其他参数使用用户输入的值
           (modifiedSchema.input_schema.properties as any)[key] = {
             ...prop,
