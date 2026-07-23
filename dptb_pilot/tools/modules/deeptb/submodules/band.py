@@ -12,7 +12,7 @@ from dptb.postprocess.unified import TBSystem
 
 from matplotlib import image as mpimg, pyplot as plt
 
-from dptb_pilot.tools.modules.deeptb.submodules.abacus import _abacus_get_efermi
+from dptb_pilot.tools.modules.abacus.core import _abacus_get_efermi
 from dptb_pilot.tools.modules.util.comm import generate_work_path, temporary_chdir
 from dptb_pilot.tools.modules.util.get_dptb_path import get_dptb_path
 
@@ -160,6 +160,8 @@ def smart_band_gap(eig, efermi, atol=1e-3, max_diff=1.0):
         包含带隙信息的字典。若不存在任何带隙，则返回 None。
     """
     eigenvalues = np.asarray(eig)
+    if atol is None:
+        atol = 1e-3
 
     if eigenvalues.ndim != 2:
         raise ValueError("eigenvalues should have shape (Nk, Nband)")
@@ -211,6 +213,9 @@ def smart_band_gap(eig, efermi, atol=1e-3, max_diff=1.0):
             biggest_gap = (lower, upper)
 
     # 提取目标带隙的核心参数
+    if biggest_gap is None:
+        return narrow_band_gap(eig, efermi)
+
     gap_lower, gap_upper = biggest_gap
     gap_width = gap_upper - gap_lower
     gap_center = (gap_lower + gap_upper) / 2.0
