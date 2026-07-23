@@ -68,6 +68,7 @@ test_generated_*
 my_work
 C40*
 nul
+label_example
 
 # Model
 *.pth
