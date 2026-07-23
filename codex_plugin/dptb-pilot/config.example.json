@@ -1,0 +1,6 @@
+{
+  "server_url": "http://localhost:8000",
+  "session_id": "0123456789abcdef0123456789abcdef",
+  "timeout_ms": 30000,
+  "python_path": "C:/Users/lonya/PycharmProjects/dptb-pilot/.venv/Scripts/python.exe"
+}

@@ -1,0 +1,36 @@
+{
+  "name": "dptb-pilot",
+  "version": "0.1.0",
+  "description": "Use a remote DPTB Pilot agent directly from Codex.",
+  "author": {
+    "name": "DeePTB Pilot"
+  },
+  "repository": "https://github.com/DeePTB-Lab/dptb-pilot",
+  "license": "GPL-3.0-only",
+  "keywords": [
+    "deeptb",
+    "dptb",
+    "materials",
+    "agent",
+    "mcp"
+  ],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "DPTB Pilot",
+    "shortDescription": "Call a configured DPTB Pilot server from Codex.",
+    "longDescription": "DPTB Pilot connects Codex to an existing DPTB Pilot FastAPI backend using a configured server URL and session id. It exposes chat, health checks, and session file operations as MCP tools.",
+    "developerName": "DeePTB Pilot",
+    "category": "Engineering",
+    "capabilities": [
+      "Interactive",
+      "Read",
+      "Write"
+    ],
+    "defaultPrompt": [
+      "Ask DPTB Pilot about my DeePTB workflow.",
+      "Upload this structure to DPTB Pilot.",
+      "List files in my DPTB Pilot session."
+    ]
+  }
+}
