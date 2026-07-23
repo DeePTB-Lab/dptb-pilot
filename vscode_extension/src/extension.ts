@@ -1,5 +1,6 @@
 import * as path from 'node:path';
 import * as vscode from 'vscode';
+import { DEFAULT_SERVER_URL, normalizeBaseUrl } from './api/url';
 import type { HostToWebviewMessage, VisualizationPayload, WebviewToHostMessage } from './shared/types';
 
 const CONFIG_SECTION = 'dptbPilot';
@@ -52,7 +53,7 @@ class DptbPilotPanel {
     this.post({
       type: 'bootstrap',
       payload: {
-        serverUrl: config.get<string>('serverUrl') || 'http://localhost:8000',
+        serverUrl: config.get<string>('serverUrl') || DEFAULT_SERVER_URL,
         sessionId: config.get<string>('sessionId') || '',
         extensionUri: this.context.extensionUri.toString(),
         matterViz: {
@@ -168,16 +169,25 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
     vscode.commands.registerCommand('dptbPilot.connectServer', async () => {
       const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
-      const current = config.get<string>('serverUrl') || 'http://localhost:8000';
+      const current = config.get<string>('serverUrl') || DEFAULT_SERVER_URL;
       const serverUrl = await vscode.window.showInputBox({
         title: 'Connect DPTB Pilot Server',
         prompt: 'Enter the dptb-pilot FastAPI server URL',
         value: current,
-        ignoreFocusOut: true
+        ignoreFocusOut: true,
+        validateInput: (value) => {
+          try {
+            normalizeBaseUrl(value);
+            return undefined;
+          } catch (error) {
+            return errorMessage(error);
+          }
+        }
       });
       if (!serverUrl) return;
-      await config.update('serverUrl', serverUrl, vscode.ConfigurationTarget.Global);
-      DptbPilotPanel.createOrShow(context).post({ type: 'serverUrlChanged', payload: { serverUrl } });
+      const normalizedUrl = normalizeBaseUrl(serverUrl);
+      await config.update('serverUrl', normalizedUrl, vscode.ConfigurationTarget.Global);
+      DptbPilotPanel.createOrShow(context).post({ type: 'serverUrlChanged', payload: { serverUrl: normalizedUrl } });
     }),
     vscode.commands.registerCommand('dptbPilot.newSession', () => {
       DptbPilotPanel.createOrShow(context).post({ type: 'openNewSession' });
@@ -196,8 +206,15 @@ export function activate(context: vscode.ExtensionContext): void {
         const sessionId = params.get('session');
         const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
 
+        let normalizedServerUrl: string | null = null;
         if (serverUrl) {
-          await config.update('serverUrl', serverUrl, vscode.ConfigurationTarget.Global);
+          try {
+            normalizedServerUrl = normalizeBaseUrl(serverUrl);
+            await config.update('serverUrl', normalizedServerUrl, vscode.ConfigurationTarget.Global);
+          } catch (error) {
+            void vscode.window.showErrorMessage(`Invalid DPTB Pilot server URL: ${errorMessage(error)}`);
+            return;
+          }
         }
         if (sessionId) {
           await config.update('sessionId', sessionId, vscode.ConfigurationTarget.Global);
@@ -205,7 +222,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
         if (config.get<boolean>('autoOpenOnUrl') !== false) {
           const panel = DptbPilotPanel.createOrShow(context);
-          if (serverUrl) panel.post({ type: 'serverUrlChanged', payload: { serverUrl } });
+          if (normalizedServerUrl) panel.post({ type: 'serverUrlChanged', payload: { serverUrl: normalizedServerUrl } });
           if (sessionId) panel.post({ type: 'sessionChanged', payload: { sessionId } });
         }
       }

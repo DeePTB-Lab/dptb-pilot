@@ -19,9 +19,9 @@ This package adds an independent VS Code interaction mode for dptb-pilot. It con
 
 ## Install in VS Code / 在 VS Code 中安装
 
-This folder can be built into a normal VS Code `.vsix` extension package and installed directly. The dptb-pilot FastAPI backend must be running separately before you connect from the extension; the default URL is `http://localhost:8000`.
+This folder can be built into a normal VS Code `.vsix` extension package and installed directly. The dptb-pilot FastAPI backend must be running separately before you connect from the extension; the default URL is `http://localhost:50003`.
 
-本目录可以打包成标准的 VS Code `.vsix` 插件并直接安装。连接前需要先单独启动 dptb-pilot FastAPI 后端；默认地址为 `http://localhost:8000`。
+本目录可以打包成标准的 VS Code `.vsix` 插件并直接安装。连接前需要先单独启动 dptb-pilot FastAPI 后端；默认地址为 `http://localhost:50003`。
 
 From this directory:
 
@@ -74,7 +74,7 @@ Open this folder in VS Code and run the extension in an Extension Development Ho
 
 Settings:
 
-- `dptbPilot.serverUrl` — defaults to `http://localhost:8000`.
+- `dptbPilot.serverUrl` — defaults to `http://localhost:50003`.
 - `dptbPilot.sessionId` — optional default session id.
 - `dptbPilot.autoOpenOnUrl` — controls whether deep links open the chat view.
 - `dptbPilot.matterViz.commandId` — optional MatterViz command used to open a visualization payload.
@@ -84,7 +84,7 @@ Settings:
 Deep link format:
 
 ```text
-vscode://dptb-pilot.dptb-pilot-vscode/connect?url=http%3A%2F%2Flocalhost%3A8000&session=ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef
+vscode://dptb-pilot.dptb-pilot-vscode/connect?url=http%3A%2F%2Flocalhost%3A50003&session=ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef
 ```
 
 ## Backend Requirements
@@ -105,7 +105,7 @@ Start the existing dptb-pilot backend first. The extension uses the existing end
 
 ## Manual Verification
 
-1. Start dptb-pilot backend at `http://localhost:8000`.
+1. Start the dptb-pilot backend at `http://localhost:50003` (or use the value configured by `PORT`).
 2. Launch the extension development host.
 3. Run `DPTB Pilot: Connect Server` and enter the backend URL.
 4. Generate or enter a 32-character session id and connect.

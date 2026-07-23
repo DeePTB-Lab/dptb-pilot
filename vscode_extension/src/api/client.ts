@@ -35,13 +35,20 @@ export class DptbPilotClient {
   }
 
   private async request<T>(path: string, init?: RequestInit): Promise<T> {
-    const response = await fetch(apiUrl(this.baseUrl, path), {
-      ...init,
-      headers: {
-        ...(init?.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
-        ...init?.headers
-      }
-    });
+    const requestUrl = apiUrl(this.baseUrl, path);
+    let response: Response;
+    try {
+      response = await fetch(requestUrl, {
+        ...init,
+        headers: {
+          ...(init?.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
+          ...init?.headers
+        }
+      });
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      throw new Error(`Cannot reach the DPTB Pilot backend at ${this.baseUrl}: ${detail}`);
+    }
 
     if (!response.ok) {
       throw await parseError(response);
@@ -51,11 +58,19 @@ export class DptbPilotClient {
       return undefined as T;
     }
 
-    return response.json() as Promise<T>;
+    try {
+      return await response.json() as T;
+    } catch {
+      throw new Error(`The server at ${this.baseUrl} did not return a DPTB Pilot API response. Check that this is the backend port, not the frontend URL.`);
+    }
   }
 
   login(data: LoginRequest): Promise<LoginResponse> {
     return this.request('/api/login', { method: 'POST', body: JSON.stringify(data) });
+  }
+
+  getHealth(): Promise<{ status: string; message?: string }> {
+    return this.request('/api/health');
   }
 
   getConfig(): Promise<AppConfig> {

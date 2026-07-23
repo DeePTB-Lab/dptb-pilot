@@ -51,8 +51,8 @@
       "properties": {
         "dptbPilot.serverUrl": {
           "type": "string",
-          "default": "http://localhost:8000",
-          "description": "Base URL of the running dptb-pilot FastAPI server."
+          "default": "http://localhost:50003",
+          "description": "Base URL of the running dptb-pilot FastAPI server (for example http://localhost:50003). The extension verifies /api/health before connecting."
         },
         "dptbPilot.sessionId": {
           "type": "string",

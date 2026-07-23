@@ -1,7 +1,7 @@
 ﻿import { useEffect, useMemo, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { DptbPilotClient } from '../../api/client';
-import { generateSessionId, isValidSessionId, normalizeBaseUrl } from '../../api/url';
+import { DEFAULT_SERVER_URL, generateSessionId, isValidSessionId, normalizeBaseUrl } from '../../api/url';
 import type {
   ChatMessage,
   ChatSession,
@@ -35,7 +35,8 @@ const shortcutPrompts = [
 ];
 
 export function App() {
-  const [serverUrl, setServerUrl] = useState('http://localhost:8000');
+  const [serverUrl, setServerUrl] = useState(DEFAULT_SERVER_URL);
+  const [activeServerUrl, setActiveServerUrl] = useState(DEFAULT_SERVER_URL);
   const [sessionId, setSessionId] = useState('');
   const [connected, setConnected] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -58,7 +59,7 @@ export function App() {
   const wsRef = useRef<WebSocket | null>(null);
   const currentChatIdRef = useRef('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const client = useMemo(() => new DptbPilotClient(serverUrl), [serverUrl]);
+  const client = useMemo(() => new DptbPilotClient(activeServerUrl), [activeServerUrl]);
   const currentSession = sessions.find((item) => item.chat_id === currentChatId) || null;
 
   useEffect(() => {
@@ -67,11 +68,22 @@ export function App() {
     const listener = (event: MessageEvent<HostToWebviewMessage>) => {
       const message = event.data;
       if (message.type === 'bootstrap') {
-        setServerUrl(message.payload.serverUrl || 'http://localhost:8000');
+        const configuredUrl = message.payload.serverUrl || DEFAULT_SERVER_URL;
+        setServerUrl(configuredUrl);
+        try {
+          setActiveServerUrl(normalizeBaseUrl(configuredUrl));
+        } catch {
+          setError('保存的服务器地址无效，请输入正确的 DPTB Pilot 后端地址。');
+        }
         if (message.payload.sessionId) setSessionId(message.payload.sessionId);
         setMatterViz({ ...defaultMatterViz, ...message.payload.matterViz });
       } else if (message.type === 'serverUrlChanged') {
         setServerUrl(message.payload.serverUrl);
+        try {
+          setActiveServerUrl(normalizeBaseUrl(message.payload.serverUrl));
+        } catch {
+          setError('服务器地址无效，请输入正确的 HTTP 或 HTTPS 地址。');
+        }
         setConnected(false);
       } else if (message.type === 'sessionChanged') {
         setSessionId(message.payload.sessionId);
@@ -109,7 +121,6 @@ export function App() {
   }, [connected, sessionId, client]);
 
   async function login(targetSessionId = sessionId) {
-    const cleanServerUrl = normalizeBaseUrl(serverUrl);
     const cleanSessionId = targetSessionId.trim();
     if (!isValidSessionId(cleanSessionId)) {
       setError('Session ID must be 32 alphanumeric characters.');
@@ -119,15 +130,22 @@ export function App() {
     setLoading(true);
     setError(null);
     try {
+      const cleanServerUrl = normalizeBaseUrl(serverUrl);
+      const activeClient = new DptbPilotClient(cleanServerUrl);
+      const health = await activeClient.getHealth();
+      if (health.status !== 'ok') {
+        throw new Error('该地址未返回有效的 DPTB Pilot 健康检查结果。');
+      }
       setServerUrl(cleanServerUrl);
+      setActiveServerUrl(cleanServerUrl);
       setSessionId(cleanSessionId);
       vscode?.postMessage({ type: 'setServerUrl', payload: { serverUrl: cleanServerUrl } });
       vscode?.postMessage({ type: 'setSessionId', payload: { sessionId: cleanSessionId } });
-      await new DptbPilotClient(cleanServerUrl).login({ session_id: cleanSessionId });
+      await activeClient.login({ session_id: cleanSessionId });
       setConnected(true);
-      await loadSessions(cleanSessionId, new DptbPilotClient(cleanServerUrl));
-      await loadFiles(cleanSessionId, new DptbPilotClient(cleanServerUrl));
-      connectWebSocket(cleanSessionId, new DptbPilotClient(cleanServerUrl));
+      await loadSessions(cleanSessionId, activeClient);
+      await loadFiles(cleanSessionId, activeClient);
+      connectWebSocket(cleanSessionId, activeClient);
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -176,7 +194,7 @@ export function App() {
         setActivePanel('params');
       }
     } else if (message.type === 'error') {
-      setError(message.message || '鍚庣杩斿洖閿欒');
+      setError(message.message || '后端返回错误');
       setResponding(false);
     } else if (message.type === 'charge_result') {
       patchLastAssistant({ charge_result: message.charge_result });
@@ -337,7 +355,7 @@ export function App() {
   }
 
   function addRemoteMachine(type: 'Bohrium' | 'Slurm') {
-    const name = prompt('鏈哄櫒鍚嶇О');
+    const name = prompt('机器名称');
     if (!name) return;
     const machine: RemoteMachine = type === 'Bohrium'
       ? { id: String(Date.now()), name, type, config: { username: '', password: '', project_id: '', image_name: '', scass_type: '' } }
@@ -356,26 +374,26 @@ export function App() {
 
         <section className="connect-card">
           <label>Server URL</label>
-          <input value={serverUrl} onChange={(event) => setServerUrl(event.target.value)} placeholder="http://localhost:8000" />
+          <input value={serverUrl} onChange={(event) => { setServerUrl(event.target.value); setConnected(false); }} placeholder={DEFAULT_SERVER_URL} />
           <label>Session ID</label>
           <div className="inline-row">
             <input value={sessionId} onChange={(event) => setSessionId(event.target.value.replace(/[^a-zA-Z0-9]/g, '').slice(0, 32))} placeholder="32-char session id" />
-            <button onClick={() => setSessionId(generateSessionId())}>鐢熸垚</button>
+            <button onClick={() => setSessionId(generateSessionId())}>生成</button>
           </div>
-          <button className="primary" disabled={loading} onClick={() => void login()}>{loading ? '杩炴帴涓?..' : connected ? '閲嶆柊杩炴帴' : '杩炴帴'}</button>
+          <button className="primary" disabled={loading} onClick={() => void login()}>{loading ? '连接中...' : connected ? '重新连接' : '连接'}</button>
           {error && <div className="error-box">{error}</div>}
         </section>
 
         <section className="sessions-header">
-          <strong>浼氳瘽</strong>
-          <button onClick={() => void createNewSession()} disabled={!connected}>鏂板缓</button>
+          <strong>会话</strong>
+          <button onClick={() => void createNewSession()} disabled={!connected}>新建</button>
         </section>
         <div className="session-list">
           {sessions.map((session) => (
             <button key={session.chat_id} className={session.chat_id === currentChatId ? 'selected session-item' : 'session-item'} onClick={() => setCurrentChatId(session.chat_id)}>
               <span>{session.title || 'Untitled'}</span>
               <small>{session.message_count || session.history.length} messages</small>
-              <span className="delete" onClick={(event) => { event.stopPropagation(); void deleteSession(session.chat_id); }}>脳</span>
+              <span className="delete" onClick={(event) => { event.stopPropagation(); void deleteSession(session.chat_id); }}>x</span>
             </button>
           ))}
         </div>
@@ -465,10 +483,10 @@ function MessageBubble({ message, matterViz, responding }: { message: ChatMessag
         {isUser ? <p>{message.content}</p> : <MarkdownWithVisualize content={message.content} matterViz={matterViz} />}
         {responding && <span className="typing">...</span>}
         {!isUser && message.usage_metadata && (
-          <small className="metadata">杈撳叆 token {message.usage_metadata.prompt_tokens || 0} 路 杈撳嚭 token {message.usage_metadata.candidates_tokens || 0}</small>
+          <small className="metadata">输入 token {message.usage_metadata.prompt_tokens || 0} · 输出 token {message.usage_metadata.candidates_tokens || 0}</small>
         )}
         {!isUser && message.charge_result && (
-          <small className="metadata">鍏夊瓙 {message.charge_result.photon_amount || 0} 路 RMB {(message.charge_result.rmb_amount || 0).toFixed(2)}</small>
+          <small className="metadata">光子 {message.charge_result.photon_amount || 0} · RMB {(message.charge_result.rmb_amount || 0).toFixed(2)}</small>
         )}
       </div>
     </article>
