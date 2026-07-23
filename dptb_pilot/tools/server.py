@@ -42,11 +42,12 @@ def load_tools():
         dos_predict,
         hamiltonian_predict,
     )
-    from dptb_pilot.tools.modules.deeptb.abacus import (
+    from dptb_pilot.tools.modules.abacus.tools import (
         abacus_band_gap,
         abacus_band_plot,
         abacus_get_efermi,
         run_abacus,
+        run_abacus_scf_nscf,
     )
     from dptb_pilot.tools.modules.deeptb.convert import (
         convert_lammps_data_structure,
@@ -66,6 +67,12 @@ def load_tools():
         dpnegf_run_lammps_task,
         dpnegf_run_negf_task,
         dpnegf_transmission_plot,
+    )
+
+    # DeePMD-kit
+    from dptb_pilot.tools.modules.deepmd.training import (
+        finetune_dpa3_model,
+        train_deepmd_model,
     )
 
     # Knowledge

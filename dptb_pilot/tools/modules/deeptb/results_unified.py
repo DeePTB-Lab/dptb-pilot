@@ -58,6 +58,14 @@ class BandGapResult(TypedDict, total=False):
     cbm: float
     vbm_band_index: int
     cbm_band_index: int
+    gap_lower: float
+    gap_upper: float
+    gap_width: float
+    gap_center: float
+    distance_to_fermi: float
+    fermi_inside_gap: bool
+    all_gaps: List[Any]
+    risky: bool
 
 
 class BandCompareResult(TypedDict):
