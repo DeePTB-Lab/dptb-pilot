@@ -19,12 +19,28 @@ export interface UploadPayload {
   type?: string;
 }
 
-async function parseError(response: Response): Promise<Error> {
+export class DptbPilotApiError extends Error {
+  readonly status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = 'DptbPilotApiError';
+    this.status = status;
+  }
+}
+
+async function parseError(response: Response): Promise<DptbPilotApiError> {
   try {
     const data = await response.json();
-    return new Error(data.detail || data.message || `HTTP ${response.status}`);
+    return new DptbPilotApiError(
+      response.status,
+      data.detail || data.message || `HTTP ${response.status}`
+    );
   } catch {
-    return new Error(`HTTP ${response.status}: ${response.statusText}`);
+    return new DptbPilotApiError(
+      response.status,
+      `HTTP ${response.status}: ${response.statusText}`
+    );
   }
 }
 

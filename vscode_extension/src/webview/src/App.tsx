@@ -1,6 +1,6 @@
 ﻿import { useEffect, useMemo, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
-import { DptbPilotClient } from '../../api/client';
+import { DptbPilotApiError, DptbPilotClient } from '../../api/client';
 import { DEFAULT_SERVER_URL, generateSessionId, isValidSessionId, normalizeBaseUrl } from '../../api/url';
 import type {
   ChatMessage,
@@ -39,9 +39,11 @@ export function App() {
   const [activeServerUrl, setActiveServerUrl] = useState(DEFAULT_SERVER_URL);
   const [sessionId, setSessionId] = useState('');
   const [connected, setConnected] = useState(false);
+  const [executionConfigSupported, setExecutionConfigSupported] = useState(true);
   const [loading, setLoading] = useState(false);
   const [responding, setResponding] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [currentChatId, setCurrentChatId] = useState<string>('');
   const [files, setFiles] = useState<FileInfo[]>([]);
@@ -88,6 +90,7 @@ export function App() {
           setError('服务器地址无效，请输入正确的 HTTP 或 HTTPS 地址。');
         }
         setConnected(false);
+        setExecutionConfigSupported(true);
       } else if (message.type === 'sessionChanged') {
         setSessionId(message.payload.sessionId);
       } else if (message.type === 'uploadFile') {
@@ -166,13 +169,21 @@ export function App() {
   }, [executionMode]);
 
   useEffect(() => {
-    if (!connected || !sessionId || responding) return;
+    if (!connected || !executionConfigSupported || !sessionId || responding) return;
     const timeout = window.setTimeout(() => {
-      void applyExecutionConfig().catch((err) => setError(errorMessage(err)));
+      void applyExecutionConfig().catch((err) => {
+        if (isMissingExecutionConfigEndpoint(err)) {
+          setExecutionConfigSupported(false);
+          setNotice(executionConfigCompatibilityMessage());
+          return;
+        }
+        setError(errorMessage(err));
+      });
     }, 300);
     return () => window.clearTimeout(timeout);
   }, [
     connected,
+    executionConfigSupported,
     executionMode,
     remoteMachines,
     responding,
@@ -199,6 +210,7 @@ export function App() {
 
     setLoading(true);
     setError(null);
+    setNotice(null);
     try {
       const cleanServerUrl = normalizeBaseUrl(serverUrl);
       const activeClient = new DptbPilotClient(cleanServerUrl);
@@ -212,11 +224,20 @@ export function App() {
       vscode?.postMessage({ type: 'setServerUrl', payload: { serverUrl: cleanServerUrl } });
       vscode?.postMessage({ type: 'setSessionId', payload: { sessionId: cleanSessionId } });
       await activeClient.login({ session_id: cleanSessionId });
-      await applyExecutionConfig(activeClient, cleanSessionId);
+      let compatibilityWarning: string | null = null;
+      try {
+        await applyExecutionConfig(activeClient, cleanSessionId);
+        setExecutionConfigSupported(true);
+      } catch (err) {
+        if (!isMissingExecutionConfigEndpoint(err)) throw err;
+        setExecutionConfigSupported(false);
+        compatibilityWarning = executionConfigCompatibilityMessage();
+      }
       setConnected(true);
       await loadSessions(cleanSessionId, activeClient);
       await loadFiles(cleanSessionId, activeClient);
       connectWebSocket(cleanSessionId, activeClient);
+      setNotice(compatibilityWarning);
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -466,6 +487,7 @@ export function App() {
           </div>
           <button className="primary" disabled={loading} onClick={() => void login()}>{loading ? '连接中...' : connected ? '重新连接' : '连接'}</button>
           {error && <div className="error-box">{error}</div>}
+          {notice && <div className="notice-box">{notice}</div>}
         </section>
 
         <section className="sessions-header">
@@ -1025,6 +1047,14 @@ function createRemoteMachineId(): string {
 
 function remoteMachineSecretKey(machineId: string): string {
   return `dptbPilot.remoteMachine.${machineId}.password`;
+}
+
+function isMissingExecutionConfigEndpoint(error: unknown): boolean {
+  return error instanceof DptbPilotApiError && error.status === 404;
+}
+
+function executionConfigCompatibilityMessage(): string {
+  return '已连接到旧版后端；该后端不支持自动绑定远程执行配置。请更新并重启 dptb-pilot 后端，当前仍可使用原有参数确认模式。';
 }
 
 function groupFiles(files: FileInfo[]) {

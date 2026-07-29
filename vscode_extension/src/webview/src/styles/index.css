@@ -33,6 +33,7 @@ small { color: var(--vscode-descriptionForeground); }
 .inline-row { display: flex; gap: 8px; align-items: center; }
 .inline-row > input, .inline-row > select, .inline-row > textarea { flex: 1; }
 .error-box { color: var(--vscode-errorForeground); background: var(--vscode-inputValidation-errorBackground); border: 1px solid var(--vscode-inputValidation-errorBorder); padding: 8px; border-radius: 4px; font-size: 12px; }
+.notice-box { color: var(--vscode-foreground); background: var(--vscode-inputValidation-warningBackground); border: 1px solid var(--vscode-inputValidation-warningBorder); padding: 8px; border-radius: 4px; font-size: 12px; }
 .sessions-header { padding: 12px; display: flex; align-items: center; justify-content: space-between; }
 .session-list { flex: 1; min-height: 0; padding: 0 8px 12px; overflow: auto; }
 .session-item { position: relative; width: 100%; text-align: left; margin-bottom: 6px; padding: 10px 28px 10px 10px; display: flex; flex-direction: column; gap: 4px; background: transparent; color: var(--vscode-foreground); }
