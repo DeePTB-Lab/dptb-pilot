@@ -19,7 +19,15 @@ echo "DeePTB-Pilot-Startup-Script:[INFO] Ports 50001–50003 are free."
 # Move to repository to access knowledge database
 cd /dptb-pilot
 
-nohup dptb-tools > mcp.out 2>&1 &
+if ! command -v uv >/dev/null 2>&1; then
+  echo "DeePTB-Pilot-Startup-Script:[ERROR] uv is required but was not found."
+  exit 1
+fi
+
+echo "DeePTB-Pilot-Startup-Script:[INFO] Python project source verification:"
+uv run --project /dptb-pilot python -c "import dptb_pilot.server.app as app; print(app.__file__); print([route.path for route in app.app.routes if route.path == '/api/execution-config'])"
+
+nohup uv run --project /dptb-pilot dptb-tools > mcp.out 2>&1 &
 
 echo "DeePTB-Pilot-Startup-Script:[INFO] dptb-tools started, waiting for port 50001..."
 
@@ -52,4 +60,4 @@ done
 ############################
 echo "DeePTB-Pilot-Startup-Script:[INFO] MCP Service is ready. Activate API server and Frontend..."
 
-dptb-pilot
+exec uv run --project /dptb-pilot dptb-pilot

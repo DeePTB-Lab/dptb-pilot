@@ -30,6 +30,9 @@ from dptb_pilot.core.photon_config import CHARGING_ENABLED
 
 logger = get_logger(__name__)
 
+BACKEND_BUILD_ID = "2026-07-29-execution-config-v1"
+SERVER_CAPABILITIES = ["execution_config", "remote_executor_binding"]
+
 
 # 全局状态管理 (保持与原main.py兼容)
 active_agents: Dict[str, LlmAgent] = {}
@@ -1472,7 +1475,12 @@ async def decide_workflow_plan(request: WorkflowPlanDecisionRequest):
 @app.get("/api/health")
 async def health_check():
     """健康检查端点"""
-    return {"status": "ok", "message": "Backend is running"}
+    return {
+        "status": "ok",
+        "message": "Backend is running",
+        "build_id": BACKEND_BUILD_ID,
+        "capabilities": SERVER_CAPABILITIES,
+    }
 
 @app.get("/api/config")
 async def get_config():
@@ -1481,7 +1489,9 @@ async def get_config():
     config = {
         "agent_info": agent_info,
         "mcp_server_url": mcp_server_url,
-        "target_tools": target_tools
+        "target_tools": target_tools,
+        "build_id": BACKEND_BUILD_ID,
+        "capabilities": SERVER_CAPABILITIES,
     }
     logger.debug(f"返回配置信息: {config}")
     return config
@@ -1503,6 +1513,14 @@ def initialize_server(
     mcp_server_url = mcp_url
     work_path = work_dir
     target_tools = tools_modify or []
+
+    registered_paths = {route.path for route in app.routes}
+    logger.info(f"Backend build: {BACKEND_BUILD_ID}")
+    logger.info(f"Backend module: {Path(__file__).resolve()}")
+    logger.info(
+        "Execution config route registered: "
+        f"{'/api/execution-config' in registered_paths}"
+    )
 
     # 加载MCP工具信息
     try:
