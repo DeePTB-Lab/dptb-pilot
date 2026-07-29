@@ -4,9 +4,54 @@
 """
 import sys
 import os
+import inspect
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from dptb_pilot.server.app import generate_executor_and_storage
+from dptb_pilot.server.app import (
+    build_execution_config,
+    generate_executor_and_storage,
+)
+from dp.agent.server.calculation_mcp_server import init_executor
+from dp.agent.server.storage import BohriumStorage
+
+
+def test_build_bohrium_execution_config_uses_sdk_contract():
+    config = build_execution_config('Remote', {
+        'type': 'Bohrium',
+        'config': {
+            'username': 'user@example.com',
+            'password': 'secret',
+            'project_id': '123',
+            'image_name': 'example/image:latest',
+            'scass_type': 'c4_m8_cpu',
+        },
+    })
+
+    assert config['executor']['type'] == 'dispatcher'
+    assert config['executor']['machine']['context_type'] == 'Bohrium'
+    assert config['executor']['machine']['remote_profile']['program_id'] == 123
+    assert config['storage']['type'] == 'bohrium'
+    assert config['storage']['project_id'] == '123'
+    assert 'program_id' not in config['storage']
+
+    executor_type, executor = init_executor(config['executor'])
+    assert executor_type == 'dispatcher'
+    assert executor.machine['context_type'] == 'Bohrium'
+    storage_parameters = inspect.signature(BohriumStorage).parameters
+    assert 'project_id' in storage_parameters
+    assert 'program_id' not in storage_parameters
+
+
+def test_build_execution_config_rejects_executor_shorthand():
+    try:
+        build_execution_config('Remote', {
+            'type': 'bohrium',
+            'config': {'username': 'user', 'password': 'secret'},
+        })
+    except ValueError as exc:
+        assert 'project_id' in str(exc)
+    else:
+        raise AssertionError('Incomplete Bohrium config should be rejected')
 
 
 def test_executor_generation_slurm():

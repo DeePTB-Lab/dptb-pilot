@@ -15,6 +15,7 @@ This package adds an independent VS Code interaction mode for dptb-pilot. It con
 - Hand off supported visualizations to MatterViz through a configurable command id or URI template.
 - Confirm tool parameters using form or JSON mode.
 - Select Local/Remote execution mode and manage Bohrium/Slurm machine JSON configs.
+- Bind the selected remote executor to the active Pilot session automatically.
 - Open via command or `vscode://` deep link.
 
 ## Install in VS Code / 在 VS Code 中安装
@@ -92,6 +93,7 @@ vscode://dptb-pilot.dptb-pilot-vscode/connect?url=http%3A%2F%2Flocalhost%3A50003
 Start the existing dptb-pilot backend first. The extension uses the existing endpoints implemented in `dptb_pilot/server/app.py`:
 
 - `POST /api/login`
+- `POST /api/execution-config`
 - `GET /api/config`
 - `GET/POST /api/user/{user_id}/sessions`
 - `GET /api/files/{session_id}`
@@ -112,8 +114,12 @@ Start the existing dptb-pilot backend first. The extension uses the existing end
 5. Send a chat message and verify streaming output.
 6. Upload a file and verify list/preview/download/delete.
 7. Trigger a tool requiring parameters and verify form/json submission and termination.
-8. Test the deep link above with your own URL/session.
-9. Confirm the original `web_ui/` frontend still runs independently.
+8. Select Remote mode and a complete Bohrium or Slurm machine, then verify a
+   compute tool is submitted remotely without adding an `executor` argument to
+   the chat request. The backend generates the SDK-compatible executor object;
+   `"bohrium"` is not a valid executor shorthand.
+9. Test the deep link above with your own URL/session.
+10. Confirm the original `web_ui/` frontend still runs independently.
 
 ## Notes
 

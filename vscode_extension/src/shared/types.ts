@@ -140,6 +140,13 @@ export interface ModifyParamsRequest {
   remote_machine?: RemoteMachine | null;
 }
 
+export interface ExecutionConfigRequest {
+  session_id: string;
+  execution_mode: ExecutionMode;
+  selected_machine_id?: string;
+  remote_machine?: RemoteMachine | null;
+}
+
 export interface TerminateExecutionRequest {
   session_id: string;
 }
@@ -165,6 +172,7 @@ export type HostToWebviewMessage =
   | { type: 'serverUrlChanged'; payload: { serverUrl: string } }
   | { type: 'sessionChanged'; payload: { sessionId: string } }
   | { type: 'uploadFile'; payload: { name: string; bytes: number[] } }
+  | { type: 'secret'; payload: { requestId: string; value?: string } }
   | { type: 'openNewSession' };
 
 export type WebviewToHostMessage =

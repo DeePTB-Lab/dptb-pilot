@@ -33,6 +33,7 @@ logger = get_logger(__name__)
 
 # 全局状态管理 (保持与原main.py兼容)
 active_agents: Dict[str, LlmAgent] = {}
+session_execution_configs: Dict[str, Dict[str, Any]] = {}
 history_pool: Dict[str, List[List[str]]] = {}
 session_service = InMemorySessionService()
 
@@ -97,6 +98,12 @@ manager = ConnectionManager()
 class LoginRequest(BaseModel):
     session_id: str
 
+class ExecutionConfigRequest(BaseModel):
+    session_id: str
+    execution_mode: str = 'Local'
+    selected_machine_id: Optional[str] = None
+    remote_machine: Optional[Dict[str, Any]] = None
+
 class ChatMessage(BaseModel):
     message: str
     session_id: str
@@ -117,6 +124,121 @@ class WorkflowPlanDecisionRequest(BaseModel):
     decision: str
 
 
+def build_execution_config(
+    execution_mode: str,
+    remote_machine: Optional[Dict[str, Any]],
+) -> Dict[str, Any]:
+    if execution_mode != 'Remote':
+        return {}
+    if not remote_machine:
+        raise ValueError("Remote execution requires a selected machine")
+
+    machine_type = str(remote_machine.get('type') or '').strip().lower()
+    config = remote_machine.get('config') or {}
+    if not isinstance(config, dict):
+        raise ValueError("Remote machine config must be an object")
+
+    if machine_type == 'bohrium':
+        username = str(config.get('username') or '').strip()
+        password = str(config.get('password') or '')
+        project_id = str(config.get('project_id') or '').strip()
+        if not username or not password or not project_id:
+            raise ValueError(
+                "Bohrium username, password, and project_id are required"
+            )
+        try:
+            program_id = int(project_id)
+        except ValueError as exc:
+            raise ValueError("Bohrium project_id must be an integer") from exc
+
+        return {
+            'executor': {
+                'type': 'dispatcher',
+                'machine': {
+                    'batch_type': 'Bohrium',
+                    'context_type': 'Bohrium',
+                    'remote_profile': {
+                        'email': username,
+                        'password': password,
+                        'program_id': program_id,
+                        'input_data': {
+                            'image_name': config.get('image_name') or
+                            'registry.dp.tech/dptech/dp/native/prod-35271/dptb-pilot-test:0.2',
+                            'job_type': 'container',
+                            'platform': 'ali',
+                            'scass_type': config.get('scass_type') or 'c2_m4_cpu',
+                        },
+                    },
+                },
+            },
+            'storage': {
+                'type': 'bohrium',
+                'username': username,
+                'password': password,
+                'project_id': project_id,
+            },
+        }
+
+    if machine_type == 'slurm':
+        required = ['remote_root', 'hostname', 'username', 'key_filename']
+        missing = [key for key in required if not config.get(key)]
+        if missing:
+            raise ValueError(f"Slurm config is missing: {', '.join(missing)}")
+        return {
+            'executor': {
+                'type': 'dispatcher',
+                'machine': {
+                    'batch_type': 'Slurm',
+                    'context_type': 'SSHContext',
+                    'local_root': './',
+                    'remote_root': config['remote_root'],
+                    'remote_profile': {
+                        'hostname': config['hostname'],
+                        'username': config['username'],
+                        'timeout': 600,
+                        'port': int(config.get('port', 22)),
+                        'key_filename': config['key_filename'],
+                    },
+                },
+                'resources': {
+                    'number_node': int(config.get('number_node', 1)),
+                    'gpu_per_node': int(config.get('gpu_per_node') or 0),
+                    'cpu_per_node': int(config.get('cpu_per_node') or 1),
+                    'queue_name': config.get('queue_name'),
+                    'custom_flags': [config.get('custom_flags', ''), ''],
+                    'source_list': [],
+                    'module_list': [],
+                },
+            },
+        }
+
+    raise ValueError(
+        f"Unsupported remote machine type: {remote_machine.get('type')}"
+    )
+
+
+def create_session_agent(session_id: str) -> LlmAgent:
+    return create_llm_agent(
+        session_id=session_id,
+        mcp_tools_url=mcp_server_url,
+        agent_info=agent_info,
+        model_config=model_config,
+        execution_config=session_execution_configs.get(session_id),
+    )
+
+
+def redact_secrets(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {
+            key: ('***' if key.lower() in {'password', 'authorization', 'token'}
+                  else redact_secrets(item))
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [redact_secrets(item) for item in value]
+    return value
+
+
 def generate_executor_and_storage(
     execution_mode: str,
     remote_machine: Optional[Dict[str, Any]],
@@ -133,20 +255,22 @@ def generate_executor_and_storage(
     Returns:
         更新后的工具 schema，包含自动生成的 Executor 和 Storage 参数
     """
-    if execution_mode != 'Remote' or not remote_machine:
+    if execution_mode != 'Remote':
+        return tool_schema
+
+    try:
+        execution_config = build_execution_config(execution_mode, remote_machine)
+    except ValueError as exc:
+        logger.warning(f"[AutoGenerate] 无效的远程机器配置: {exc}")
         return tool_schema
 
     machine_type = remote_machine.get('type')
     config = remote_machine.get('config', {})
 
-    if not machine_type or not config:
-        logger.warning(f"[AutoGenerate] 无效的远程机器配置: {remote_machine}")
-        return tool_schema
-
     logger.info("=" * 80)
     logger.info(f"[AutoGenerate] 开始自动生成 Executor 和 Storage 参数")
     logger.info(f"[AutoGenerate] 机器类型: {machine_type}")
-    logger.info(f"[AutoGenerate] 机器配置: {json.dumps(config, ensure_ascii=False, indent=2)}")
+    logger.info(f"[AutoGenerate] 机器配置: {json.dumps(redact_secrets(config), ensure_ascii=False, indent=2)}")
 
     # 深拷贝 tool_schema 避免修改原对象
     result_schema = copy.deepcopy(tool_schema)
@@ -162,58 +286,10 @@ def generate_executor_and_storage(
             break
 
     if executor_key:
-        if machine_type == 'Bohrium':
-            executor_config = {
-                'type': 'dispatcher',
-                'machine': {
-                    'batch_type': 'Bohrium',
-                    'context_type': 'Bohrium',
-                    'remote_profile': {
-                        'email': config.get('username'),
-                        'password': config.get('password'),
-                        'program_id': int(config.get('project_id', 0)),
-                        'input_data': {
-                            'image_name': config.get('image_name') or 'registry.dp.tech/dptech/dp/native/prod-35271/dptb-pilot-test:0.2',
-                            'job_type': 'container',
-                            'platform': 'ali',
-                            'scass_type': config.get('scass_type') or 'c2_m4_cpu'
-                        }
-                    }
-                }
-            }
-            logger.info(f"[AutoGenerate] Bohrium Executor 配置已生成")
-            logger.info(f"[AutoGenerate] Executor: {json.dumps(executor_config, ensure_ascii=False, indent=2)}")
-            properties[executor_key]['user_input'] = executor_config
-
-        elif machine_type == 'Slurm':
-            executor_config = {
-                'type': 'dispatcher',
-                'machine': {
-                    'batch_type': 'Slurm',
-                    'context_type': 'SSHContext',
-                    'local_root': './',
-                    'remote_root': config.get('remote_root'),
-                    'remote_profile': {
-                        'hostname': config.get('hostname'),
-                        'username': config.get('username'),
-                        'timeout': 600,
-                        'port': 22,
-                        'key_filename': config.get('key_filename')
-                    }
-                },
-                'resources': {
-                    'number_node': int(config.get('number_node', 1)),
-                    'gpu_per_node': int(config.get('gpu_per_node', 0)) if config.get('gpu_per_node') else 0,
-                    'cpu_per_node': int(config.get('cpu_per_node', 1)) if config.get('cpu_per_node') else 1,
-                    'queue_name': config.get('queue_name'),
-                    'custom_flags': [config.get('custom_flags', ''), ''],
-                    'source_list': [],
-                    'module_list': []
-                }
-            }
-            logger.info(f"[AutoGenerate] Slurm Executor 配置已生成")
-            logger.info(f"[AutoGenerate] Executor: {json.dumps(executor_config, ensure_ascii=False, indent=2)}")
-            properties[executor_key]['user_input'] = executor_config
+        executor_config = execution_config['executor']
+        logger.info(f"[AutoGenerate] {machine_type} Executor 配置已生成")
+        logger.info(f"[AutoGenerate] Executor: {json.dumps(redact_secrets(executor_config), ensure_ascii=False, indent=2)}")
+        properties[executor_key]['user_input'] = executor_config
 
     # 生成 Storage 配置（仅 Bohrium 类型）
     storage_key = None
@@ -223,14 +299,9 @@ def generate_executor_and_storage(
             break
 
     if storage_key and machine_type == 'Bohrium':
-        storage_config = {
-            'type': 'bohrium',
-            'username': config.get('username'),
-            'password': config.get('password'),
-            'project_id': int(config.get('project_id', 0))
-        }
+        storage_config = execution_config['storage']
         logger.info(f"[AutoGenerate] Bohrium Storage 配置已生成")
-        logger.info(f"[AutoGenerate] Storage: {json.dumps(storage_config, ensure_ascii=False, indent=2)}")
+        logger.info(f"[AutoGenerate] Storage: {json.dumps(redact_secrets(storage_config), ensure_ascii=False, indent=2)}")
         properties[storage_key]['user_input'] = storage_config
 
     logger.info(f"[AutoGenerate] 完成 Executor 和 Storage 参数自动生成")
@@ -563,8 +634,11 @@ async def call_agent_async(query: str, runner: Runner, user_id: str, session_id:
             }
             # 清理终止状态
             termination_requested[session_id] = False
-            if session_id in pending_events:
-                pending_events[session_id].set()
+            pending_event = pending_events.get(session_id)
+            if isinstance(pending_event, asyncio.Event):
+                pending_event.set()
+            else:
+                pending_events.pop(session_id, None)
             break
 
         # 处理工具调用
@@ -585,7 +659,10 @@ async def call_agent_async(query: str, runner: Runner, user_id: str, session_id:
 
                         # 存储schema并等待用户修改
                         unmodified_schema_store[session_id] = schema
-                        pending_events[session_id] = asyncio.Event()
+                        pending_event = asyncio.Event()
+                        pending_events[session_id] = pending_event
+                        cancel_event = asyncio.Event()
+                        cancel_execution_events[session_id] = cancel_event
 
                         # 通知前端需要修改参数
                         await manager.send_message(session_id, {
@@ -594,25 +671,17 @@ async def call_agent_async(query: str, runner: Runner, user_id: str, session_id:
                             "tool_name": tool_name
                         })
 
-                        # 等待用户修改完成或终止
-                        # 创建一个任务来检查取消事件
-                        cancel_task = None
-                        if session_id in cancel_execution_events:
-                            cancel_execution_events[session_id] = asyncio.Event()
-                            cancel_task = asyncio.create_task(cancel_execution_events[session_id].wait())
-
-                        # 等待 pending_event 或 cancel_event
+                        # 终止接口也会触发 pending_event，使等待立即返回。
                         try:
-                            await asyncio.wait_for(pending_events[session_id].wait(), timeout=600.0)
+                            await asyncio.wait_for(pending_event.wait(), timeout=600.0)
                         except asyncio.TimeoutError:
                             logger.warning(f"[CallAgent] 会话 {session_id} 等待参数修改超时")
                             break
-
-                        # 清理 cancel_task
-                        if cancel_task:
-                            cancel_task.cancel()
-                        if session_id in cancel_execution_events:
-                            cancel_execution_events[session_id] = None
+                        finally:
+                            if pending_events.get(session_id) is pending_event:
+                                pending_events.pop(session_id, None)
+                            if cancel_execution_events.get(session_id) is cancel_event:
+                                cancel_execution_events.pop(session_id, None)
 
                         # 检查是否被终止
                         if termination_requested.get(session_id, False):
@@ -624,8 +693,6 @@ async def call_agent_async(query: str, runner: Runner, user_id: str, session_id:
                             }
                             # 清理状态
                             termination_requested[session_id] = False
-                            if session_id in pending_events:
-                                pending_events[session_id] = None
                             break
 
                         # 使用修改后的参数
@@ -670,18 +737,46 @@ async def login(request: LoginRequest):
     # 创建或获取agent
     if session_id not in active_agents:
         try:
-            agent = create_llm_agent(
-                session_id=session_id,
-                mcp_tools_url=mcp_server_url,
-                agent_info=agent_info,
-                model_config=model_config
-            )
-            active_agents[session_id] = agent
+            active_agents[session_id] = create_session_agent(session_id)
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"创建Agent失败: {str(e)}")
 
     logger.info(f"登录成功，会话ID: {session_id}")
     return {"message": "登录成功", "session_id": session_id}
+
+
+@app.post("/api/execution-config")
+async def update_execution_config(request: ExecutionConfigRequest):
+    try:
+        execution_config = build_execution_config(
+            request.execution_mode,
+            request.remote_machine,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    if execution_config:
+        session_execution_configs[request.session_id] = execution_config
+    else:
+        session_execution_configs.pop(request.session_id, None)
+
+    if request.session_id in active_agents:
+        try:
+            active_agents[request.session_id] = create_session_agent(
+                request.session_id
+            )
+        except Exception as exc:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to apply execution config: {exc}",
+            ) from exc
+
+    return {
+        "message": "Execution config applied",
+        "execution_mode": request.execution_mode,
+        "selected_machine_id": request.selected_machine_id,
+        "remote_enabled": bool(execution_config),
+    }
 
 
 @app.post("/api/chat")
@@ -1000,7 +1095,7 @@ async def modify_parameters(request: ModifyParamsRequest):
     logger.info(f"[ModifyParams] 工具名称: {modified_schema.get('name', 'unknown')}")
     logger.info(f"[ModifyParams] 执行模式: {request.execution_mode}")
     logger.info(f"[ModifyParams] 选中的机器ID: {request.selected_machine_id}")
-    logger.info(f"[ModifyParams] 修改前的Schema: {json.dumps(modified_schema, ensure_ascii=False, indent=2)}")
+    logger.info(f"[ModifyParams] 修改前的Schema: {json.dumps(redact_secrets(modified_schema), ensure_ascii=False, indent=2)}")
     logger.info("=" * 80)
 
     # 构建工作目录路径：{work_path}/{session_id}/files（确保是绝对路径）
@@ -1014,7 +1109,7 @@ async def modify_parameters(request: ModifyParamsRequest):
     )
 
     logger.info("=" * 80)
-    logger.info(f"[ModifyParams] 生成 Executor 和 Storage 后的Schema: {json.dumps(modified_schema, ensure_ascii=False, indent=2)}")
+    logger.info(f"[ModifyParams] 生成 Executor 和 Storage 后的Schema: {json.dumps(redact_secrets(modified_schema), ensure_ascii=False, indent=2)}")
     logger.info("=" * 80)
 
     # 提取修改后的参数
@@ -1050,18 +1145,20 @@ async def modify_parameters(request: ModifyParamsRequest):
                             modified_args[param_name] = possible_path
                             logger.warning(f"[ModifyParams] 路径参数 {param_name}: 文件不存在，使用预期路径 {user_input} -> {possible_path}")
 
-    logger.info(f"[ModifyParams] 提取后的参数: {modified_args}")
-    logger.info(f"[ModifyParams] Executor 参数: {modified_args.get('executor')}")
-    logger.info(f"[ModifyParams] Storage 参数: {modified_args.get('storage')}")
+    logger.info(f"[ModifyParams] 提取后的参数: {redact_secrets(modified_args)}")
+    logger.info(f"[ModifyParams] Executor 参数: {redact_secrets(modified_args.get('executor'))}")
+    logger.info(f"[ModifyParams] Storage 参数: {redact_secrets(modified_args.get('storage'))}")
 
     modified_args_store[session_id] = modified_args
     modified_schema_store[session_id] = modified_schema
 
     # 恢复agent执行
-    if session_id in pending_events:
+    pending_event = pending_events.get(session_id)
+    if isinstance(pending_event, asyncio.Event):
         logger.info(f"[ModifyParams] 触发事件，恢复 agent 执行")
-        pending_events[session_id].set()
+        pending_event.set()
     else:
+        pending_events.pop(session_id, None)
         logger.warning(f"[ModifyParams] Session {session_id} 没有待处理的事件")
 
     return {"message": "参数已更新", "modified_args": modified_args}
@@ -1081,18 +1178,23 @@ async def terminate_execution(request: TerminateExecutionRequest):
     termination_requested[session_id] = True
 
     # 触发取消事件
-    if session_id in pending_events:
+    pending_event = pending_events.get(session_id)
+    if isinstance(pending_event, asyncio.Event):
         # 设置终止事件，使 wait 立即返回
-        if session_id not in cancel_execution_events:
-            cancel_execution_events[session_id] = asyncio.Event()
-        cancel_execution_events[session_id].set()
+        cancel_event = cancel_execution_events.get(session_id)
+        if not isinstance(cancel_event, asyncio.Event):
+            cancel_event = asyncio.Event()
+            cancel_execution_events[session_id] = cancel_event
+        cancel_event.set()
 
         # 同时触发 pending_event 使其返回
-        pending_events[session_id].set()
+        pending_event.set()
 
         logger.info(f"[TerminateExecution] 已触发会话 {session_id} 的终止信号")
         return {"message": "终止请求已发送", "status": "terminating"}
     else:
+        pending_events.pop(session_id, None)
+        cancel_execution_events.pop(session_id, None)
         logger.warning(f"[TerminateExecution] Session {session_id} 没有待处理的事件")
         return {"message": "没有正在执行的任务", "status": "no_active_task"}
 

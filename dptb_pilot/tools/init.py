@@ -6,6 +6,9 @@ model = os.environ.get("DPTB_AGENT_MODEL", "dp")
 
 assert model == "dp", f"Invalid DPTB_AGENT_MODEL={model}. Please set it to dp"
 from dp.agent.server import CalculationMCPServer
+from dptb_pilot.tools.executor import register_nested_path_dispatcher
+
+register_nested_path_dispatcher()
 mcp = CalculationMCPServer("DPTB_AGENT", port=port, host=host)
 
 '''if model == "dp":

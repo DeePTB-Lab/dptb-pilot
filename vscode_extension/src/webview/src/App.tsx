@@ -48,7 +48,9 @@ export function App() {
   const [input, setInput] = useState('');
   const [schema, setSchema] = useState<ToolSchema | null>(null);
   const [modifyMode, setModifyMode] = useState<ModifyMode>('individual');
-  const [executionMode, setExecutionMode] = useState<ExecutionMode>('Local');
+  const [executionMode, setExecutionMode] = useState<ExecutionMode>(
+    () => readLocal('dptb.executionMode', 'Local')
+  );
   const [schemaJson, setSchemaJson] = useState('');
   const [activePanel, setActivePanel] = useState<'params' | 'files'>('params');
   const [preview, setPreview] = useState<{ file: FileInfo; content?: string; imageUrl?: string } | null>(null);
@@ -57,6 +59,7 @@ export function App() {
   const [matterViz, setMatterViz] = useState(defaultMatterViz);
 
   const wsRef = useRef<WebSocket | null>(null);
+  const requestedMachineSecretsRef = useRef(new Set<string>());
   const currentChatIdRef = useRef('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const client = useMemo(() => new DptbPilotClient(activeServerUrl), [activeServerUrl]);
@@ -89,6 +92,22 @@ export function App() {
         setSessionId(message.payload.sessionId);
       } else if (message.type === 'uploadFile') {
         void uploadHostFile(message.payload.name, new Uint8Array(message.payload.bytes));
+      } else if (message.type === 'secret') {
+        const machineId = message.payload.requestId;
+        if (message.payload.value) {
+          setRemoteMachines((old) => old.map((machine) => {
+            if (machine.id !== machineId || machine.type !== 'Bohrium') {
+              return machine;
+            }
+            return {
+              ...machine,
+              config: {
+                ...(machine.config as BohriumConfig),
+                password: message.payload.value,
+              },
+            };
+          }));
+        }
       } else if (message.type === 'openNewSession') {
         void createNewSession();
       }
@@ -103,12 +122,63 @@ export function App() {
   }, [currentChatId]);
 
   useEffect(() => {
-    localStorage.setItem('dptb.remoteMachines', JSON.stringify(remoteMachines));
+    const persistentMachines = remoteMachines.map((machine) => {
+      if (machine.type !== 'Bohrium') return machine;
+      const config = machine.config as BohriumConfig;
+      if (config.password) {
+        vscode?.postMessage({
+          type: 'saveSecret',
+          payload: {
+            key: remoteMachineSecretKey(machine.id),
+            value: config.password,
+          },
+        });
+      }
+      return { ...machine, config: { ...config, password: '' } };
+    });
+    localStorage.setItem('dptb.remoteMachines', JSON.stringify(persistentMachines));
+  }, [remoteMachines]);
+
+  useEffect(() => {
+    remoteMachines.forEach((machine) => {
+      if (machine.type !== 'Bohrium') return;
+      const config = machine.config as BohriumConfig;
+      if (config.password || requestedMachineSecretsRef.current.has(machine.id)) {
+        return;
+      }
+      requestedMachineSecretsRef.current.add(machine.id);
+      vscode?.postMessage({
+        type: 'getSecret',
+        payload: {
+          key: remoteMachineSecretKey(machine.id),
+          requestId: machine.id,
+        },
+      });
+    });
   }, [remoteMachines]);
 
   useEffect(() => {
     localStorage.setItem('dptb.selectedMachineId', selectedMachineId);
   }, [selectedMachineId]);
+
+  useEffect(() => {
+    localStorage.setItem('dptb.executionMode', executionMode);
+  }, [executionMode]);
+
+  useEffect(() => {
+    if (!connected || !sessionId || responding) return;
+    const timeout = window.setTimeout(() => {
+      void applyExecutionConfig().catch((err) => setError(errorMessage(err)));
+    }, 300);
+    return () => window.clearTimeout(timeout);
+  }, [
+    connected,
+    executionMode,
+    remoteMachines,
+    responding,
+    selectedMachineId,
+    sessionId,
+  ]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -142,6 +212,7 @@ export function App() {
       vscode?.postMessage({ type: 'setServerUrl', payload: { serverUrl: cleanServerUrl } });
       vscode?.postMessage({ type: 'setSessionId', payload: { sessionId: cleanSessionId } });
       await activeClient.login({ session_id: cleanSessionId });
+      await applyExecutionConfig(activeClient, cleanSessionId);
       setConnected(true);
       await loadSessions(cleanSessionId, activeClient);
       await loadFiles(cleanSessionId, activeClient);
@@ -151,6 +222,21 @@ export function App() {
     } finally {
       setLoading(false);
     }
+  }
+
+  async function applyExecutionConfig(
+    activeClient = client,
+    activeSessionId = sessionId,
+  ) {
+    const selectedMachine = remoteMachines.find(
+      (item) => item.id === selectedMachineId
+    ) || null;
+    await activeClient.setExecutionConfig({
+      session_id: activeSessionId,
+      execution_mode: executionMode,
+      selected_machine_id: selectedMachineId,
+      remote_machine: selectedMachine,
+    });
   }
 
   async function loadSessions(userId = sessionId, activeClient = client) {
@@ -354,12 +440,10 @@ export function App() {
     await loadFiles();
   }
 
-  function addRemoteMachine(type: 'Bohrium' | 'Slurm') {
-    const name = prompt('机器名称');
-    if (!name) return;
+  function addRemoteMachine(type: 'Bohrium' | 'Slurm', name: string) {
     const machine: RemoteMachine = type === 'Bohrium'
-      ? { id: String(Date.now()), name, type, config: { username: '', password: '', project_id: '', image_name: '', scass_type: '' } }
-      : { id: String(Date.now()), name, type, config: { remote_root: '', hostname: '', username: '', key_filename: '', number_node: '1', queue_name: '' } };
+      ? { id: createRemoteMachineId(), name, type, config: { username: '', password: '', project_id: '', image_name: '', scass_type: '' } }
+      : { id: createRemoteMachineId(), name, type, config: { remote_root: '', hostname: '', username: '', key_filename: '', number_node: '1', queue_name: '' } };
     setRemoteMachines((old) => [...old, machine]);
     setSelectedMachineId(machine.id);
   }
@@ -707,11 +791,26 @@ function ParameterPanel(props: {
   selectedMachineId: string;
   setSelectedMachineId: (value: string) => void;
   setRemoteMachines: (value: RemoteMachine[] | ((old: RemoteMachine[]) => RemoteMachine[])) => void;
-  addRemoteMachine: (type: 'Bohrium' | 'Slurm') => void;
+  addRemoteMachine: (type: 'Bohrium' | 'Slurm', name: string) => void;
   submitParams: (formData?: FormData) => Promise<void>;
   terminateExecution: () => Promise<void>;
 }) {
   const selectedMachine = props.remoteMachines.find((machine) => machine.id === props.selectedMachineId) || null;
+  const [pendingMachineType, setPendingMachineType] = useState<'Bohrium' | 'Slurm' | null>(null);
+  const [pendingMachineName, setPendingMachineName] = useState('');
+
+  function beginAddRemoteMachine(type: 'Bohrium' | 'Slurm') {
+    setPendingMachineType(type);
+    setPendingMachineName('');
+  }
+
+  function confirmAddRemoteMachine() {
+    const name = pendingMachineName.trim();
+    if (!pendingMachineType || !name) return;
+    props.addRemoteMachine(pendingMachineType, name);
+    setPendingMachineType(null);
+    setPendingMachineName('');
+  }
 
   return (
     <div className="panel-content">
@@ -730,9 +829,33 @@ function ParameterPanel(props: {
             </select>
           </label>
           <div className="inline-row remote-actions">
-            <button type="button" onClick={() => props.addRemoteMachine('Bohrium')}>Add Bohrium</button>
-            <button type="button" onClick={() => props.addRemoteMachine('Slurm')}>Add Slurm</button>
+            <button type="button" onClick={() => beginAddRemoteMachine('Bohrium')}>Add Bohrium</button>
+            <button type="button" onClick={() => beginAddRemoteMachine('Slurm')}>Add Slurm</button>
           </div>
+          {pendingMachineType && (
+            <div className="remote-machine-name-editor">
+              <label>{pendingMachineType} machine name
+                <input
+                  autoFocus
+                  value={pendingMachineName}
+                  onChange={(event) => setPendingMachineName(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      event.preventDefault();
+                      confirmAddRemoteMachine();
+                    } else if (event.key === 'Escape') {
+                      setPendingMachineType(null);
+                    }
+                  }}
+                  placeholder={`My ${pendingMachineType} machine`}
+                />
+              </label>
+              <div className="inline-row">
+                <button className="primary" type="button" disabled={!pendingMachineName.trim()} onClick={confirmAddRemoteMachine}>Add</button>
+                <button type="button" onClick={() => setPendingMachineType(null)}>Cancel</button>
+              </div>
+            </div>
+          )}
           {selectedMachine && <small className="selected-machine">Selected: {selectedMachine.name} ({selectedMachine.type})</small>}
           {props.remoteMachines.map((machine) => (
             <details key={machine.id} open={machine.id === props.selectedMachineId}>
@@ -858,7 +981,7 @@ function generateExecutorProperty(prop: ToolSchema['input_schema']['properties']
           key_filename: config.key_filename
         }
       },
-      resource: {
+      resources: {
         number_node: parseInt(config.number_node, 10),
         gpu_per_node: config.gpu_per_node ? parseInt(config.gpu_per_node, 10) : 0,
         cpu_per_node: config.cpu_per_node ? parseInt(config.cpu_per_node, 10) : 1,
@@ -878,7 +1001,7 @@ function generateBohriumStorageProperty(prop: ToolSchema['input_schema']['proper
       type: 'bohrium',
       username: config.username,
       password: config.password,
-      program_id: parseInt(config.project_id, 10)
+      project_id: config.project_id
     }
   };
 }
@@ -894,6 +1017,14 @@ function makeSession(userId: string): ChatSession {
     last_active: now.toISOString(),
     message_count: 0
   };
+}
+
+function createRemoteMachineId(): string {
+  return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+function remoteMachineSecretKey(machineId: string): string {
+  return `dptbPilot.remoteMachine.${machineId}.password`;
 }
 
 function groupFiles(files: FileInfo[]) {

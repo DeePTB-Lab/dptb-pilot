@@ -1,6 +1,7 @@
 import type {
   AppConfig,
   ChatSession,
+  ExecutionConfigRequest,
   FileInfo,
   LoginRequest,
   LoginResponse,
@@ -67,6 +68,17 @@ export class DptbPilotClient {
 
   login(data: LoginRequest): Promise<LoginResponse> {
     return this.request('/api/login', { method: 'POST', body: JSON.stringify(data) });
+  }
+
+  setExecutionConfig(data: ExecutionConfigRequest): Promise<{
+    message: string;
+    execution_mode: string;
+    remote_enabled: boolean;
+  }> {
+    return this.request('/api/execution-config', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
   }
 
   getHealth(): Promise<{ status: string; message?: string }> {

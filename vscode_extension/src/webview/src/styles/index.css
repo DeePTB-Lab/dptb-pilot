@@ -67,6 +67,9 @@ small { color: var(--vscode-descriptionForeground); }
 .composer { flex: 0 0 auto; display: flex; gap: 6px; align-items: center; padding: 8px 10px; border-top: 1px solid var(--vscode-panel-border); background: var(--vscode-editorGroupHeader-tabsBackground); }
 .composer textarea { flex: 1; min-height: 34px; max-height: 120px; padding: 5px 8px; line-height: 18px; }
 .remote-actions button { flex: 1; }
+.remote-machine-name-editor { display: flex; flex-direction: column; gap: 8px; padding: 10px; border: 1px solid var(--vscode-focusBorder, var(--vscode-panel-border)); border-radius: 4px; background: var(--vscode-editorWidget-background); }
+.remote-machine-name-editor .inline-row { justify-content: flex-end; }
+.remote-machine-name-editor .inline-row button { width: auto; }
 .selected-machine { display: block; padding: 6px 8px; border: 1px solid var(--vscode-panel-border); border-radius: 4px; background: var(--vscode-editorWidget-background); }
 
 .tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding: 10px; border-bottom: 1px solid var(--vscode-panel-border); }

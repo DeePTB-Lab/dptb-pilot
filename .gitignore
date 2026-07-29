@@ -84,7 +84,7 @@ label_example
 .sqlite3
 
 # vscode extension package
-.vsix
+*.vsix
 
 # other packages
 negfflow
