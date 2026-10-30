@@ -1,0 +1,66 @@
+{
+    "task_options": {
+        "task": "negf",
+        "scf": false,
+        "block_tridiagonal": true,
+        "n_cpus": 64,
+        "rgf_device": "cpu",
+        "ele_T": 300,
+        "unit": "eV",
+        "scf_options":{
+            "mode": "PDIIS",
+            "mixing_period": 3,
+            "step_size": 0.05,
+            "n_history": 6,
+            "abs_err": 1e-6,
+            "rel_err": 1e-4,
+            "max_iter": 100
+        },
+        "stru_options":{
+            "gamma_center": true,
+            "time_reversal_symmetry": true,
+            "nel_atom": {"C": 4.0},
+            "kmesh":[1,1,1],
+			"eig_solver":"numpy",
+            "e_fermi_smearing":"Gaussian",
+            "pbc":[false, false, false],
+            "device":{
+                "id":"*",
+                "sort": true
+            },
+            "lead_L":{
+                "id":"*",
+                "voltage":0.0,
+                "kmesh_lead_Ef":[1,1,20],
+                "useBloch": false
+            },
+            "lead_R":{
+                "id":"*",
+                "voltage":0.0,
+                "kmesh_lead_Ef":[1,1,20],
+                "useBloch": false
+            }
+        },
+        "poisson_options": {
+            "solver": "fmm",
+            "err": 1e-5
+        },
+        "sgf_solver": "Sancho-Rubio",
+        "energy_grid_options": {
+            "energies": [ 0 ]
+        },
+        "density_options": {
+            "method": "Fiori",
+            "integrate_way": "direct"
+        },
+        "eta_lead": 1e-2,
+        "eta_device": 0.0,
+        "output_options": {
+            "dos": false,
+            "tc": true,
+            "ldos": false,
+            "current_nscf": true
+        }
+    },
+    "structure":"*"
+}
