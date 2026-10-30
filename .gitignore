@@ -64,7 +64,27 @@ workspace/**/sessions.json
 .pytest_cache/
 *.egg-info/
 reproduce_*.py
+test_generated_*
+my_work
+C40*
+nul
+label_example
+
+# Model
+*.pth
 
 # Logs and temporary files
 *.log
 *.tmp
+
+# Embeding model cache
+/resources/emb_model/huggingface/
+
+# RAG result
+.sqlite3
+
+# vscode extension package
+*.vsix
+
+# other packages
+negfflow

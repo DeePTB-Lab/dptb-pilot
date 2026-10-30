@@ -3,6 +3,19 @@ export interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
   timestamp?: string;
+  usage_metadata?: {
+    prompt_tokens?: number;
+    candidates_tokens?: number;
+    total_tokens?: number;
+  };
+  charge_result?: {
+    success: boolean;
+    code: string;
+    message: string;
+    biz_no?: string;
+    photon_amount?: number;
+    rmb_amount?: number;
+  };
 }
 
 // 登录请求类型
@@ -24,6 +37,26 @@ export interface FileInfo {
   updated_at?: number;
 }
 
+export interface ArtifactInfo {
+  id: string;
+  source_path: string;
+  workspace_path?: string | null;
+  file_name?: string | null;
+  size?: number | null;
+  mime_type: string;
+  exists: boolean;
+  preview_kind: 'image' | 'text' | 'binary' | 'unavailable';
+  content_preview?: string | null;
+}
+
+export interface ArtifactTask {
+  id: string;
+  chat_id: string;
+  task: string;
+  completed_at: string;
+  artifacts: ArtifactInfo[];
+}
+
 // 工具参数Schema类型
 export interface ToolSchema {
   name: string;
@@ -43,14 +76,51 @@ export interface PropertySchema {
   description?: string;
 }
 
+export interface WorkflowStep {
+  id: string;
+  title: string;
+  purpose: string;
+  tools: string[];
+  inputs: string[];
+  outputs: string[];
+  depends_on: string[];
+}
+
+export interface WorkflowPlan {
+  title: string;
+  summary: string;
+  task: string;
+  steps: WorkflowStep[];
+  risks?: string[];
+  questions?: string[];
+  review?: WorkflowReview | null;
+}
+
+export interface WorkflowReview {
+  verdict: 'pass' | 'needs_attention' | 'block';
+  summary: string;
+  scientific_logic: string[];
+  execution_logic: string[];
+  blocking_issues: string[];
+  warnings: string[];
+  recommendations: string[];
+  evidence: string[];
+  reviewed_at?: string;
+}
+
 // WebSocket消息类型
 export interface WSMessage {
-  type: 'streaming_response' | 'final_response' | 'error' | 'tool_modify_required';
+  type: 'streaming_response' | 'final_response' | 'error' | 'tool_modify_required' | 'workflow_plan_required' | 'agent_status';
   content?: string;
   is_final?: boolean;
   message?: string;
   schema?: ToolSchema;
   tool_name?: string;
+  workflow_plan?: WorkflowPlan;
+  chat_id?: string;
+  status?: 'idle' | 'waiting_for_reply' | 'in_progress';
+  progress?: string;
+  remote_tasks?: Array<Record<string, unknown>>;
 }
 
 // 应用配置类型
@@ -91,24 +161,91 @@ export interface CurrentChatSession {
 }
 
 // MCP工具执行模式
-export type ExecutionMode = 'Local' | 'Bohr' | 'None';
+export type ExecutionMode = 'Local' | 'Remote' | 'None';
+
+// 远程机器类型
+export type RemoteMachineType = 'Bohrium' | 'Slurm';
+
+// Bohrium 机器配置
+export interface BohriumConfig {
+  username: string;
+  password: string;
+  project_id: string;
+  image_name?: string;
+  scass_type?: string;
+}
+
+// Slurm 机器配置
+export interface SlurmConfig {
+  remote_root: string;
+  hostname: string;
+  username: string;
+  key_filename: string;
+  number_node: string;
+  gpu_per_node?: string;
+  cpu_per_node?: string;
+  queue_name: string;
+  custom_flags?: string;
+}
+
+// 远程机器配置
+export interface RemoteMachine {
+  id: string;
+  name: string;
+  type: RemoteMachineType;
+  config: BohriumConfig | SlurmConfig;
+}
 
 // 参数修改模式
 export type ModifyMode = 'individual' | 'json';
+
+// 修改参数请求类型
+export interface ModifyParamsRequest {
+  session_id: string;
+  chat_id?: string;
+  modified_schema: ToolSchema;
+  execution_mode: ExecutionMode;
+  selected_machine_id?: string;
+  remote_machine?: RemoteMachine | null;
+}
+
+// 终止执行请求类型
+export interface TerminateExecutionRequest {
+  session_id: string;
+  chat_id?: string;
+}
+
+// 终止执行响应类型
+export interface TerminateExecutionResponse {
+  message: string;
+  status: string;
+  terminated_remote_jobs?: number;
+}
+
+export interface WorkflowPlanDecisionRequest {
+  session_id: string;
+  chat_id?: string;
+  decision: 'approved' | 'rejected' | 'pilot_review';
+}
 
 // React应用状态类型
 export interface AppState {
   isAuthenticated: boolean;
   userId: string; // 32位用户会话ID
+  clientName: string; // 客户端名称（从cookie获取）
   currentChatSession: CurrentChatSession | null;
   chatSessions: ChatSession[]; // 当前用户的所有聊天会话
   files: FileInfo[]; // 用户文件列表 (全局)
+  artifactTasks: ArtifactTask[];
   config: AppConfig | null;
   executionMode: ExecutionMode;
   modifyMode: ModifyMode;
   loading: boolean;
   error: string | null;
   responding: boolean; // Agent是否正在响应
+  agentStatus: 'idle' | 'waiting_for_reply' | 'in_progress';
+  agentProgress: string;
   pendingToolResponse: string; // 待处理的工具响应内容
+  pendingWorkflowPlan: WorkflowPlan | null;
   language: 'zh' | 'en';
 }

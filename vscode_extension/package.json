@@ -1,0 +1,118 @@
+{
+  "name": "dptb-pilot-vscode",
+  "displayName": "DPTB Pilot",
+  "description": "Independent VS Code interaction UI for dptb-pilot.",
+  "version": "0.1.2",
+  "publisher": "dptb-pilot",
+  "license": "GPL-3.0-only",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Lonya0/dptb-pilot.git",
+    "directory": "vscode_extension"
+  },
+  "engines": {
+    "vscode": "^1.92.0"
+  },
+  "categories": [
+    "Other",
+    "Machine Learning"
+  ],
+  "activationEvents": [
+    "onCommand:dptbPilot.openChat",
+    "onCommand:dptbPilot.connectServer",
+    "onCommand:dptbPilot.newSession",
+    "onCommand:dptbPilot.uploadCurrentFile",
+    "onCommand:dptbPilot.openVisualizationInMatterViz",
+    "onUri"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "dptbPilot.openChat",
+        "title": "DPTB Pilot: Open Chat"
+      },
+      {
+        "command": "dptbPilot.connectServer",
+        "title": "DPTB Pilot: Connect Server"
+      },
+      {
+        "command": "dptbPilot.newSession",
+        "title": "DPTB Pilot: New Session"
+      },
+      {
+        "command": "dptbPilot.uploadCurrentFile",
+        "title": "DPTB Pilot: Upload Current File"
+      },
+      {
+        "command": "dptbPilot.openVisualizationInMatterViz",
+        "title": "DPTB Pilot: Open Visualization in MatterViz"
+      }
+    ],
+    "configuration": {
+      "title": "DPTB Pilot",
+      "properties": {
+        "dptbPilot.serverUrl": {
+          "type": "string",
+          "default": "http://localhost:50003",
+          "description": "Base URL of the running dptb-pilot FastAPI server (for example http://localhost:50003). The extension verifies /api/health before connecting."
+        },
+        "dptbPilot.sessionId": {
+          "type": "string",
+          "default": "",
+          "description": "Optional default 32-character dptb-pilot session id."
+        },
+        "dptbPilot.autoOpenOnUrl": {
+          "type": "boolean",
+          "default": true,
+          "description": "Open the chat webview when a vscode:// dptb-pilot connection URL is handled."
+        },
+        "dptbPilot.matterViz.commandId": {
+          "type": "string",
+          "default": "",
+          "description": "Optional VS Code command id provided by MatterViz for opening visualizations."
+        },
+        "dptbPilot.matterViz.uriTemplate": {
+          "type": "string",
+          "default": "",
+          "description": "Optional URI template used to open MatterViz, with {payload} replaced by a URL-encoded JSON payload."
+        },
+        "dptbPilot.matterViz.autoOpen": {
+          "type": "boolean",
+          "default": false,
+          "description": "Automatically forward supported visualizations to MatterViz when possible."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "npm run build:extension && npm run build:webview",
+    "build": "npm run compile",
+    "build:extension": "tsc -p tsconfig.extension.json",
+    "build:webview": "vite build",
+    "watch": "npm-run-all -p watch:extension watch:webview",
+    "watch:extension": "tsc -watch -p tsconfig.extension.json",
+    "watch:webview": "vite build --watch",
+    "test": "vitest run",
+    "lint": "tsc -p tsconfig.extension.json --noEmit && tsc -p tsconfig.webview.json --noEmit",
+    "package": "vsce package"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-markdown": "^9.0.1",
+    "remark-gfm": "^4.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.17.6",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@types/vscode": "^1.92.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "@vscode/vsce": "^3.2.1",
+    "npm-run-all": "^4.1.5",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.11",
+    "vitest": "^2.1.5"
+  }
+}

@@ -87,7 +87,7 @@ The `./install.sh` script will suggest an alias for you. Add it to your `~/.zshr
 
 ```bash
 # Replace with your actual path
-alias dptb='/absolute/path/to/dptb-pilot/start.sh'
+alias dptb='/absolute/path/to/dptb-pilot/activate.sh'
 ```
 
 Then you can simply run:

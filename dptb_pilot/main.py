@@ -8,10 +8,22 @@ import webbrowser
 from typing import Dict
 from dotenv import load_dotenv
 
-from dptb_pilot.server.app import initialize_server, run_server
 from dptb_pilot.core.logger import get_logger
 
 logger = get_logger(__name__)
+
+import shutil
+import sys
+
+def find_npm_command():
+    """
+    跨平台查找 npm 可执行文件
+    """
+    if sys.platform.startswith("win"):
+        return shutil.which("npm.cmd") or shutil.which("npm.exe")
+    else:
+        return shutil.which("npm")
+
 
 def parse_arguments():
     """解析命令行参数"""
@@ -89,6 +101,11 @@ def parse_arguments():
 
 def start_frontend_server(frontend_port: int = 3000, frontend_host: str = "0.0.0.0", backend_host: str = "localhost", backend_port: int = 8000, debug: bool = False):
     """启动前端开发服务器 (仅在开发模式下)"""
+    npm_cmd = find_npm_command()
+    if not npm_cmd:
+        logger.error("未找到 npm，请确认 Node.js 已安装并已加入 PATH")
+        return False
+
     # 更智能的路径查找：尝试多种可能的位置
     possible_paths = [
         # 1. Standard location: Project root/web_ui
@@ -139,7 +156,7 @@ def start_frontend_server(frontend_port: int = 3000, frontend_host: str = "0.0.0
             logger.info("正在安装前端依赖...")
             try:
                 result = subprocess.run(
-                    ["npm", "install"],
+                    [npm_cmd, "install"],
                     cwd=frontend_path,
                     check=True,
                     capture_output=True,
@@ -174,7 +191,7 @@ def start_frontend_server(frontend_port: int = 3000, frontend_host: str = "0.0.0
         # 使用Popen启动，这样可以在后台运行
         logger.info("执行npm run dev...")
         process = subprocess.Popen(
-            ["npm", "run", "dev"],
+            [npm_cmd, "run", "dev"],
             cwd=frontend_path,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -239,6 +256,12 @@ def react_launch(agent_info: Dict,
                 api_key: str = None):
     """启动React版本的Better AIM"""
 
+    # Import the server stack only after main() has loaded the startup .env
+    # and resolved model_config. Dependencies may load their own dotenv files.
+    from dptb_pilot.server.app import initialize_server, run_server
+    from dptb_pilot.core.photon_service import init_photon_service
+    from dptb_pilot.core.photon_config import PHOTON_CONFIG, CHARGING_ENABLED
+
     # 设置API密钥
     if api_key:
         os.environ["API_KEY"] = api_key
@@ -250,6 +273,17 @@ def react_launch(agent_info: Dict,
             model_config["api_key"] = os.getenv("LLM_API_KEY")
         else:
             logger.warning("警告: API_KEY环境变量未设置，请通过--api-key参数设置或设置环境变量")
+
+    # 初始化光子收费服务（如果启用）
+    if CHARGING_ENABLED:
+        try:
+            init_photon_service(PHOTON_CONFIG)
+            logger.info("✅ 光子收费服务已启用")
+        except Exception as e:
+            logger.error(f"❌ 初始化光子收费服务失败: {e}")
+            logger.warning("⚠️ 将在无光子收费模式下运行")
+    else:
+        logger.info("ℹ️ 光子收费服务已禁用")
 
     # 初始化后端服务器
     initialize_server(
@@ -288,7 +322,7 @@ def react_launch(agent_info: Dict,
 
 def main():
     """主函数"""
-    # 1. 优先加载当前运行目录下的 .env
+    # 1. 在导入服务依赖前加载启动目录的 .env；显式环境变量仍优先。
     cwd_env = os.path.join(os.getcwd(), '.env')
     if os.path.exists(cwd_env):
         logger.info(f"📄 Loading .env from current directory: {cwd_env}")
@@ -358,16 +392,23 @@ Your role is twofold:
      1. **Search Only**: You have NO access to the file system. You MUST use `search_knowledge_base` to find all information.
      2. **Trust RAG**: The knowledge base contains AST-parsed code chunks (classes/functions) and notebook cells. The search results are your ONLY source of truth.
      3. **No File Reading**: Do not attempt to use `read_file_content` or `list_directory` as they are disabled.
-   - **Sequential Execution**: Please execute tool calls ONE BY ONE.
+   - **Execution and parallel submission**:
+     - Independent tool calls may be emitted in the same response so ADK can execute them concurrently.
+     - In remote mode, submit independent jobs first and collect their job IDs; do not wait for one remote job before submitting another.
+     - Never parallelize calls with dependent outputs, shared writable paths, or conflicting resources.
+     - After all submissions, use the job status/results tools as needed and report each job separately.
    - Do not guess. Verify your answers against the search results.
 
 2. **Execution Assistant**: Help users perform tasks like generating training configs, submitting missions, and testing models.
    - Use the available MCP tools to assist the user.
    - **File Uploads**: User uploaded files (e.g., POSCAR) are located in `{abs_work_dir}/{{session_id}}/files`.
    - **Workspace Management**:
-     1. Always set `work_path` to `{abs_work_dir}/{{session_id}}/files` when calling tools.
-     2. Use `list_workspace_files` to see what files are available in the workspace.
-     3. If multiple structure files exist, ask the user which one to use. If only one relevant file exists, proceed to use it immediately without asking.
+     1. Use `list_workspace_files` to see what files are available in the workspace.
+     2. If multiple structure files exist, ask the user which one to use. If only one relevant file exists, proceed to use it immediately without asking.
+     3. In remote mode, if a tool result contains a Path starting with "bohrium://", immediately call `download_artifact` with:
+        - `artifact_url`: the complete `bohrium://...` value.
+        - `work_path`: `{abs_work_dir}/{{session_id}}/files`.
+        Use the returned `file_name` in `/api/download/{{session_id}}/<file_name>`. Never claim the artifact cannot be downloaded without first checking whether `download_artifact` is available.
    - **Image Display**: You CAN display images generated by tools (like `band.png`).
      - Use this markdown format: `![Image Name](/api/download/{{session_id}}/<filename>)`
      - Example: `![Band Structure](/api/download/{{session_id}}/band.png)`
@@ -414,6 +455,8 @@ Your role is twofold:
         'api_base': os.getenv("LLM_API_BASE", "https://llm.dp.tech"),
         'api_key': os.getenv("LLM_API_KEY") or os.getenv("API_KEY")
     }
+
+    logger.info("LLM model: %s", default_model_config["model"])
 
     default_tools_modify = ["band_with_baseline_model"]
 

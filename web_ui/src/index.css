@@ -26,25 +26,30 @@ body {
   padding: 0;
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   background-color: var(--bg-dark);
-  background-image: 
+  background-image:
     radial-gradient(circle at 15% 50%, rgba(14, 165, 233, 0.08), transparent 25%),
     radial-gradient(circle at 85% 30%, rgba(59, 130, 246, 0.08), transparent 25%);
   background-size: cover;
   background-attachment: fixed;
   color: var(--text-primary);
   height: 100vh;
+  max-height: 100vh;
   overflow: hidden;
 }
 
 #root {
   height: 100vh;
+  max-height: 100vh;
+  overflow: hidden;
 }
 
 .App {
   width: 100%;
   height: 100vh;
+  max-height: 100vh;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 /* Glassmorphism Utilities */
@@ -355,4 +360,118 @@ body {
 
 .ant-popover-title, .ant-popover-inner-content {
   color: var(--text-primary) !important;
+}
+
+/* 移动端响应式布局 */
+@media (max-width: 768px) {
+  /* 隐藏桌面端元素 */
+  .desktop-only {
+    display: none !important;
+  }
+
+  /* 显示移动端元素 */
+  .mobile-only {
+    display: block !important;
+  }
+
+  /* 示例按钮网格改为单列 */
+  .shortcut-cards-grid {
+    display: grid;
+    grid-template-columns: 1fr !important;
+    gap: 16px !important;
+  }
+
+  /* 侧边栏在移动端全屏显示，但不遮挡Header */
+  .mobile-sidebar {
+    position: fixed !important;
+    height: calc(100vh - 64px) !important; /* 减去Header高度 */
+    top: 64px !important; /* 从Header下方开始 */
+    z-index: 1000 !important;
+    max-height: calc(100vh - 64px) !important;
+  }
+
+  /* 左侧栏靠左 */
+  .ant-layout-sider:first-child.mobile-sidebar {
+    left: 0 !important;
+  }
+
+  /* 右侧栏靠右 */
+  .ant-layout-sider:last-child.mobile-sidebar {
+    right: 0 !important;
+  }
+
+  /* 调整聊天区域内边距 */
+  .chat-container {
+    padding: 16px !important;
+    padding-bottom: 120px !important;
+  }
+
+  /* 调整欢迎容器 */
+  .welcome-container {
+    padding: 0 16px !important;
+  }
+
+  /* 调整输入框宽度 */
+  .input-container {
+    width: 95% !important;
+  }
+
+  /* 调整标题大小 */
+  .ant-typography h2 {
+    font-size: 1.5rem !important;
+  }
+
+  /* Header的z-index要高于侧边栏 */
+  .ant-layout-header {
+    position: relative !important;
+    z-index: 1001 !important;
+  }
+
+  .app-header {
+    position: relative !important;
+    z-index: 1001 !important;
+  }
+
+  /* 确保body不会滚动 */
+  body {
+    overflow: hidden !important;
+  }
+
+  /* 确保根元素高度正确 */
+  #root {
+    height: 100vh !important;
+    max-height: 100vh !important;
+    overflow: hidden !important;
+  }
+
+  .App {
+    height: 100vh !important;
+    max-height: 100vh !important;
+    overflow: hidden !important;
+  }
+}
+
+@media (min-width: 769px) {
+  /* 显示桌面端元素 */
+  .desktop-only {
+    display: block !important;
+  }
+
+  /* 隐藏移动端元素 */
+  .mobile-only {
+    display: none !important;
+  }
+
+  /* 示例按钮网格为2列 */
+  .shortcut-cards-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+  }
+
+  /* 侧边栏正常布局 */
+  .mobile-sidebar {
+    position: relative !important;
+    height: auto !important;
+  }
 }

@@ -11,6 +11,13 @@ logger = get_logger(__name__)
 from importlib.metadata import version
 __version__ = version("dptb_pilot")
 
+
+def load_utility_tools():
+    """Register utility tools that the agent prompt depends on."""
+    from dptb_pilot.tools.modules.util.download_artifact import download_artifact
+
+    return [download_artifact]
+
 def load_tools():
     """
     Load all tools from the dptb_agent_tools package.
@@ -21,12 +28,78 @@ def load_tools():
     # Visualization
     from dptb_pilot.tools.modules.visualization.visualize_tool import visualize_structure
     from dptb_pilot.tools.modules.visualization.visualize_bz_tool import visualize_brillouin_zone
+    # Scientific plots
+    from dptb_pilot.tools.modules.plot import (
+        plot_line,
+        plot_scatter,
+        plot_bar,
+        plot_histogram,
+        plot_heatmap,
+        plot_subplots,
+    )
     # from dptb_pilot.tools.modules.visualization.band import band_structure_plot
 
     # DeepTB
     from dptb_pilot.tools.modules.deeptb.config_tool import generate_deeptb_e3_training_config
     from dptb_pilot.tools.modules.deeptb.sk_baseline_model import band_with_baseline_model, generate_sk_baseline_model
-    from dptb_pilot.tools.modules.deeptb.sk_predict import band_with_sk_model
+    try:
+        from dptb_pilot.tools.modules.deeptb.sk_predict import band_with_sk_model
+    except ModuleNotFoundError:
+        band_with_sk_model = None
+    from dptb_pilot.tools.modules.lammps import (
+        convert_lammps_data_structure,
+        convert_structure_to_lammps_data,
+        generate_lammps_input_file,
+        generate_lammps_inputs,
+        generate_press_tube_lammps_tasks,
+        generate_uniaxial_strain_ensemble_input_file,
+        generate_uniaxial_strain_input_file,
+        generate_unstrained_lammps_input_file,
+        prepare_lammps_tasks,
+        run_lammps,
+        submit_lammps_task,
+    )
+    from dptb_pilot.tools.modules.deeptb.negf import run_negf
+    from dptb_pilot.tools.modules.deeptb.predict import (
+        band_compare,
+        band_gap,
+        band_predict,
+        band_predict_with_julia,
+        dos_plot,
+        dos_predict,
+        hamiltonian_predict,
+    )
+    from dptb_pilot.tools.modules.abacus.tools import (
+        abacus_band_gap,
+        abacus_band_plot,
+        abacus_get_fermi_level,
+        run_abacus,
+        run_abacus_scf_nscf,
+    )
+    from dptb_pilot.tools.modules.deeptb.convert import (
+        convert_vasp_poscar_structure,
+    )
+    from dptb_pilot.tools.modules.deeptb.dftio import dftio_parse
+    from dptb_pilot.tools.modules.deeptb.model_test import hamiltonian_test
+    from dptb_pilot.tools.modules.deeptb.training import train_deeptb_model
+
+    # DPNEGF workflow atoms
+    from dptb_pilot.tools.modules.dpnegf.workflow_atoms import (
+        dpnegf_build_supercell,
+        dpnegf_convert_overlap,
+        dpnegf_get_abacus_overlap,
+        dpnegf_prepare_lammps_tasks,
+        dpnegf_prepare_negf_tasks,
+        dpnegf_run_lammps_task,
+        dpnegf_run_negf_task,
+        dpnegf_transmission_plot,
+    )
+
+    # DeePMD-kit
+    from dptb_pilot.tools.modules.deepmd.training import (
+        finetune_dpa3_model,
+        train_deepmd_model,
+    )
 
     # Knowledge
     from dptb_pilot.tools.modules.knowledge.mp_tool import search_materials_project, download_mp_structure
@@ -36,6 +109,9 @@ def load_tools():
 
     # System
     from dptb_pilot.tools.modules.system.workspace_tool import list_workspace_files, read_file_content
+
+    # Utility
+    load_utility_tools()
     
     # The following lines were part of the original dynamic loading loop
     # and are now commented out or removed as they are no longer applicable
@@ -70,9 +146,9 @@ def parse_args():
     parser.add_argument(
         "--model",
         type=str,
-        default="fastmcp",
+        default="dp",
         choices=["fastmcp", "test", "dp"],
-        help="Model to use (default: fastmcp), choices: fastmcp, test, dp"
+        help="Model to use (default: dp), choices: fastmcp, test, dp"
     )
     parser.add_argument(
         "--port",
@@ -111,11 +187,6 @@ def print_version():
     logger.info(f"\nDeePTB Agent Tools Version: {__version__}")
     logger.info(f"For more information, visit: {repo}\n")
 
-def main():
-    """
-    Main function to run the MCP tool.
-    """
-    print_version()
 def main():
     """
     Main function to run the MCP tool.

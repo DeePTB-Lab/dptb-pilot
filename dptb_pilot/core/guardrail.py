@@ -131,11 +131,24 @@ def extract_arguments_from_schema(tool_schema):
 
         properties = input_schema['properties']
 
+        logger.info("=" * 80)
+        logger.info("[ExtractArguments] 开始提取参数")
+        logger.info(f"[ExtractArguments] 工具名称: {tool_schema.get('name', 'unknown')}")
+
         # 遍历所有属性，提取user_input
         for prop_name, prop_value in properties.items():
             if (isinstance(prop_value, dict) and
                     'user_input' in prop_value):
-                arguments[prop_name] = prop_value['user_input']
+                user_input_value = prop_value['user_input']
+                arguments[prop_name] = user_input_value
+                # 对于 Executor 和 Storage 参数，记录详细信息
+                if prop_name in ['Executor', 'Storage']:
+                    logger.info(f"[ExtractArguments] {prop_name} 参数:")
+                    logger.info(f"  类型: {type(user_input_value).__name__}")
+                    logger.info(f"  内容: {json.dumps(user_input_value, ensure_ascii=False, indent=2)}")
+
+        logger.info(f"[ExtractArguments] 最终参数: {arguments}")
+        logger.info("=" * 80)
 
         return arguments
 

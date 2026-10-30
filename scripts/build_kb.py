@@ -2,6 +2,8 @@ import os
 import chromadb
 from chromadb.config import Settings
 from sentence_transformers import SentenceTransformer
+import subprocess
+from pathlib import Path
 import uuid
 import shutil
 import pypdf
@@ -9,16 +11,58 @@ import ast
 import json
 
 # Configuration
-# Configuration
 # Assuming script is run from project root or installed as package
 import dptb_pilot.tools
 TOOLS_DIR = os.path.dirname(dptb_pilot.tools.__file__)
 KNOWLEDGE_BASE_DIR = os.path.join(TOOLS_DIR, "data", "deeptb_knowledge")
 REPO_PATH = os.path.join(KNOWLEDGE_BASE_DIR, "repo")
-PDF_PATH = os.path.join(KNOWLEDGE_BASE_DIR, "pdfs")
+PAPER_PATH = os.path.join(KNOWLEDGE_BASE_DIR, "paper")
+NOTEBOOK_PATH = os.path.join(KNOWLEDGE_BASE_DIR, "notebook")
 CHROMA_DB_PATH = os.path.join(TOOLS_DIR, "data", "chroma_db")
 COLLECTION_NAME = "deeptb_knowledge"
 EMBEDDING_MODEL = "all-MiniLM-L6-v2"
+
+def ensure_git_repo(
+    base_dir: str,
+    repo_url: str,
+    folder_name: str | None = None
+):
+    """
+    如果 base_dir/folder_name 不存在，则 git clone repo_url
+    如果存在，则跳过
+
+    Parameters
+    ----------
+    base_dir : str
+        父目录路径
+    repo_url : str
+        git 仓库地址
+    folder_name : str | None
+        clone 后的文件夹名，None 表示使用仓库默认名
+    """
+    base_dir = Path(base_dir).expanduser().resolve()
+    base_dir.mkdir(parents=True, exist_ok=True)
+
+    if folder_name is None:
+        folder_name = repo_url.rstrip("/").split("/")[-1].replace(".git", "")
+
+    repo_path = base_dir / folder_name
+
+    if repo_path.exists():
+        print(f"[SKIP] Repository already exists: {repo_path}")
+        return
+
+    print(f"[CLONE] Cloning {repo_url} into {repo_path}")
+    try:
+        subprocess.run(
+            ["git", "clone", repo_url, str(repo_path)],
+            check=True
+        )
+        print("[DONE] Clone successful")
+    except subprocess.CalledProcessError as e:
+        print("[ERROR] git clone failed")
+        raise e
+
 
 def process_python_file(file_path):
     """Parse Python file using AST to extract classes and functions."""
@@ -147,6 +191,30 @@ def build_knowledge_base():
     metadatas = []
     ids = []
 
+    print("Scanning notebook for files...")
+    for root, _, files in os.walk(NOTEBOOK_PATH):
+        if "/." in root or "/tests" in root or "/__pycache__" in root:
+            continue
+
+        for file in files:
+            file_path = os.path.join(root, file)
+            file_chunks = []
+
+            if file.endswith(".py"):
+                print(f"  [AST] Parsing Python: {file}")
+                file_chunks = process_python_file(file_path)
+            elif file.endswith(".ipynb"):
+                print(f"  [NB]  Parsing Notebook: {file}")
+                file_chunks = process_notebook_file(file_path)
+            elif file.endswith(".md") or file.endswith(".txt") or file.endswith(".rst"):
+                print(f"  [DOC] Reading Document: {file}")
+                file_chunks = process_text_file(file_path, "doc")
+
+            for chunk in file_chunks:
+                documents.append(chunk["text"])
+                metadatas.append(chunk["metadata"])
+                ids.append(str(uuid.uuid4()))
+
     print("Scanning repository for files...")
     for root, _, files in os.walk(REPO_PATH):
         if "/." in root or "/tests" in root or "/__pycache__" in root:
@@ -173,10 +241,10 @@ def build_knowledge_base():
 
     # Process PDFs
     print("Scanning for PDF files...")
-    if os.path.exists(PDF_PATH):
-        for file in os.listdir(PDF_PATH):
+    if os.path.exists(PAPER_PATH):
+        for file in os.listdir(PAPER_PATH):
             if file.endswith(".pdf"):
-                file_path = os.path.join(PDF_PATH, file)
+                file_path = os.path.join(PAPER_PATH, file)
                 try:
                     reader = pypdf.PdfReader(file_path)
                     for i, page in enumerate(reader.pages):
@@ -216,4 +284,5 @@ def build_knowledge_base():
     print("Knowledge base built successfully!")
 
 if __name__ == "__main__":
+    ensure_git_repo(REPO_PATH, "https://github.com/deepmodeling/DeePTB.git")
     build_knowledge_base()

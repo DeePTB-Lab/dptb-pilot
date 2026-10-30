@@ -6,7 +6,7 @@ from dptb_pilot.tools.init import mcp
 # Configuration (must match builder)
 CHROMA_DB_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data", "chroma_db")
 COLLECTION_NAME = "deeptb_knowledge"
-EMBEDDING_MODEL = "all-MiniLM-L6-v2"
+EMBEDDING_MODEL = 'sentence-transformers/all-MiniLM-L6-v2'
 
 # Global resources (lazy loaded)
 _client = None
@@ -19,7 +19,7 @@ def get_resources():
         try:
             _client = chromadb.PersistentClient(path=CHROMA_DB_PATH)
             _collection = _client.get_collection(name=COLLECTION_NAME)
-            _model = SentenceTransformer(EMBEDDING_MODEL)
+            _model = SentenceTransformer(model_name_or_path=EMBEDDING_MODEL, local_files_only=True)
         except Exception as e:
             print(f"Error initializing RAG resources: {e}")
             return None, None, None

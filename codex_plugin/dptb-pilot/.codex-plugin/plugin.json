@@ -1,0 +1,36 @@
+{
+  "name": "dptb-pilot",
+  "version": "0.2.0+codex.20260908124940",
+  "description": "Run DPTB Pilot chats, scientific workflows, remote jobs, files, and artifacts directly from Codex.",
+  "author": {
+    "name": "DeePTB Pilot"
+  },
+  "repository": "https://github.com/DeePTB-Lab/dptb-pilot",
+  "license": "GPL-3.0-only",
+  "keywords": [
+    "deeptb",
+    "dptb",
+    "materials",
+    "agent",
+    "mcp"
+  ],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "DPTB Pilot",
+    "shortDescription": "DPTB-native scientific workflows, artifacts, and remote execution.",
+    "longDescription": "DPTB Pilot connects Codex to the Pilot backend for isolated chats, asynchronous and parallel workflows, Bohrium or Slurm execution, token usage, and clickable file and artifact resources. Scientific calculations fail closed unless they carry DPTB provenance.",
+    "developerName": "DeePTB Pilot",
+    "category": "Engineering",
+    "capabilities": [
+      "Interactive",
+      "Read",
+      "Write"
+    ],
+    "defaultPrompt": [
+      "Run this scientific calculation through DPTB Pilot.",
+      "Submit these DPTB tasks in parallel and track them.",
+      "Show my Pilot artifacts and token usage."
+    ]
+  }
+}

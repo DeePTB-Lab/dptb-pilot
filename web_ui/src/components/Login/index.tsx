@@ -15,6 +15,29 @@ function generateRandomString(length = 32): string {
   return result;
 }
 
+/**
+ * 使用 SHA-256 哈希算法将任意字符串转化为32位随机字符串
+ * @param input 输入字符串（如 clientName）
+ * @returns 32位十六进制字符串
+ */
+async function hashTo32Bytes(input: string): Promise<string> {
+  if (!input) return '';
+
+  // 使用 TextEncoder 将字符串编码为 UTF-8 字节
+  const encoder = new TextEncoder();
+  const data = encoder.encode(input);
+
+  // 使用 SubtleCrypto API 计算 SHA-256 哈希
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+
+  // 将 ArrayBuffer 转换为十六进制字符串
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+
+  // SHA-256 输出64位十六进制字符，取前32位
+  return hashHex.substring(0, 32);
+}
+
 function Login() {
   const navigate = useNavigate();
   const { state, actions, dispatch } = useApp();
@@ -28,15 +51,54 @@ function Login() {
   }, [state.isAuthenticated, navigate]);
 
   useEffect(() => {
+    // 从cookie中获取clientName
+    const getCookie = (name: string) => {
+      const value = `; ${document.cookie}`;
+      const parts = value.split(`; ${name}=`);
+      if (parts.length === 2) {
+        const cookieValue = parts.pop()?.split(';').shift() ?? null;
+        return cookieValue;
+      }
+      return null;
+    };
+
+    const clientName = getCookie('clientName');
     const savedSessionId = localStorage.getItem('last_session_id');
-    if (savedSessionId) {
-      setSessionId(savedSessionId);
-      form.setFieldsValue({ session_id: savedSessionId });
-    } else {
-      setSessionId('');
-      form.setFieldsValue({ session_id: '' });
-    }
-  }, [form]);
+
+    // 使用 clientName 的哈希值作为 sessionId（如果存在）
+    const performAutoLogin = async () => {
+      let autoLoginSessionId = savedSessionId;
+
+      if (clientName) {
+        // 使用 clientName 的哈希值作为 sessionId
+        autoLoginSessionId = await hashTo32Bytes(clientName);
+        console.log('使用 clientName 生成 sessionId:', clientName, '->', autoLoginSessionId);
+      }
+
+      if (autoLoginSessionId && autoLoginSessionId.length === 32) {
+        try {
+          await actions.login(autoLoginSessionId);
+          navigate('/chat');
+        } catch (error) {
+          console.error('自动登录失败:', error);
+          // 自动登录失败，显示登录表单让用户手动输入
+          setSessionId(autoLoginSessionId);
+          form.setFieldsValue({ session_id: autoLoginSessionId });
+        }
+      } else {
+        // 没有有效的session_id，显示登录表单
+        setSessionId('');
+        form.setFieldsValue({ session_id: '' });
+      }
+
+      // 更新保存的sessionId
+      if (autoLoginSessionId) {
+        localStorage.setItem('last_session_id', autoLoginSessionId);
+      }
+    };
+
+    performAutoLogin();
+  }, []); // 移除form依赖，避免重复执行
 
   const handleGenerateRandom = () => {
     const newId = generateRandomString(32);

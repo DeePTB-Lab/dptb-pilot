@@ -10,7 +10,7 @@ ENVS = {
     "DPTB_AGENT_TRANSPORT": "sse",  # sse, streamable-http
     "DPTB_AGENT_HOST": "localhost",
     "DPTB_AGENT_PORT": "50002",
-    "DPTB_AGENT_MODEL": "fastmcp",  # fastmcp, dptb, dp
+    "DPTB_AGENT_MODEL": "dp",  # fastmcp, dptb, dp
 
     # bohrium settings
     "BOHRIUM_USERNAME": "",

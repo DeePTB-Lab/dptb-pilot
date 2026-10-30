@@ -1,11 +1,14 @@
-import React, { createContext, useContext, useReducer, ReactNode, useEffect } from 'react';
+import React, { createContext, useContext, useReducer, ReactNode, useEffect, useRef } from 'react';
 import { AppState, CurrentChatSession, ExecutionMode } from '../types';
 import {
   ChatMessage,
   ChatSession,
+  ArtifactTask,
   FileInfo,
   ModifyMode,
-  ToolSchema
+  ToolSchema,
+  ModifyParamsRequest,
+  WorkflowPlan
 } from '../types';
 import { apiService, wsService } from '../services/api';
 import { message } from 'antd';
@@ -22,27 +25,36 @@ type AppAction =
   | { type: 'CREATE_NEW_CHAT_SESSION'; payload: ChatSession }
   | { type: 'ADD_CHAT_MESSAGE'; payload: ChatMessage }
   | { type: 'UPDATE_FILES'; payload: FileInfo[] }
+  | { type: 'UPDATE_ARTIFACTS'; payload: ArtifactTask[] }
   | { type: 'SET_EXECUTION_MODE'; payload: ExecutionMode }
   | { type: 'SET_MODIFY_MODE'; payload: ModifyMode }
   | { type: 'UPDATE_STREAMING_RESPONSE'; payload: string }
   | { type: 'SET_RESPONDING'; payload: boolean }
+  | { type: 'SET_AGENT_STATUS'; payload: { status: 'idle' | 'waiting_for_reply' | 'in_progress'; progress?: string } }
   | { type: 'SET_PENDING_TOOL_RESPONSE'; payload: string }
-  | { type: 'SET_LANGUAGE'; payload: 'zh' | 'en' };
+  | { type: 'SET_PENDING_WORKFLOW_PLAN'; payload: WorkflowPlan | null }
+  | { type: 'SET_LANGUAGE'; payload: 'zh' | 'en' }
+  | { type: 'SET_CLIENT_NAME'; payload: string };
 
 // 初始状态
 const initialState: AppState = {
   isAuthenticated: false,
   userId: '',
+  clientName: '',
   currentChatSession: null,
   chatSessions: [],
   files: [],
+  artifactTasks: [],
   config: null,
   executionMode: 'Local',
   modifyMode: 'individual',
   loading: false,
   error: null,
   responding: false,
+  agentStatus: 'idle',
+  agentProgress: '',
   pendingToolResponse: '',
+  pendingWorkflowPlan: null,
   language: 'zh',
 };
 
@@ -115,6 +127,12 @@ function appReducer(state: AppState, action: AppAction): AppState {
         files: action.payload,
       };
 
+    case 'UPDATE_ARTIFACTS':
+      return {
+        ...state,
+        artifactTasks: action.payload,
+      };
+
     case 'SET_EXECUTION_MODE':
       return { ...state, executionMode: action.payload };
 
@@ -157,11 +175,20 @@ function appReducer(state: AppState, action: AppAction): AppState {
     case 'SET_RESPONDING':
       return { ...state, responding: action.payload };
 
+    case 'SET_AGENT_STATUS':
+      return { ...state, agentStatus: action.payload.status, agentProgress: action.payload.progress || '' };
+
     case 'SET_PENDING_TOOL_RESPONSE':
       return { ...state, pendingToolResponse: action.payload };
 
+    case 'SET_PENDING_WORKFLOW_PLAN':
+      return { ...state, pendingWorkflowPlan: action.payload };
+
     case 'SET_LANGUAGE':
       return { ...state, language: action.payload };
+
+    case 'SET_CLIENT_NAME':
+      return { ...state, clientName: action.payload };
 
     default:
       return state;
@@ -178,10 +205,14 @@ interface AppContextActions {
   updateSessionTitle: (chatId: string, title: string) => Promise<void>;
   clearCurrentChatHistory: () => Promise<void>;
   loadFiles: () => Promise<void>;
+  loadArtifacts: () => Promise<void>;
   uploadFiles: (files: File[]) => Promise<void>;
   deleteFile: (filename: string) => Promise<void>;
   getCurrentSchema: () => Promise<ToolSchema | null>;
-  modifyParameters: (schema: ToolSchema) => Promise<void>;
+  getCurrentWorkflowPlan: () => Promise<WorkflowPlan | null>;
+  decideWorkflowPlan: (decision: 'approved' | 'rejected' | 'pilot_review') => Promise<void>;
+  modifyParameters: (request: ModifyParamsRequest) => Promise<void>;
+  terminateExecution: () => Promise<void>;
   toggleLanguage: () => void;
   switchToChatSession: (chatId: string) => Promise<void>;
 }
@@ -196,6 +227,8 @@ const AppContext = createContext<{
 // Provider组件
 export function AppProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(appReducer, initialState);
+  const currentChatIdRef = useRef<string | undefined>(undefined);
+  currentChatIdRef.current = state.currentChatSession?.chat_id;
 
   // 初始化应用
   useEffect(() => {
@@ -206,13 +239,49 @@ export function AppProvider({ children }: { children: ReactNode }) {
         dispatch({ type: 'SET_CONFIG', payload: config });
         dispatch({ type: 'SET_ERROR', payload: null }); // 清除之前的错误
 
-        // 尝试自动登录
+        // 从cookie和localStorage获取认证信息
+        const getCookie = (name: string) => {
+          const value = `; ${document.cookie}`;
+          const parts = value.split(`; ${name}=`);
+          if (parts.length === 2) return parts.pop()?.split(';').shift();
+          return null;
+        };
+
+        // 使用 SHA-256 哈希算法将 clientName 转化为32位字符串
+        const hashTo32Bytes = async (input: string): Promise<string> => {
+          if (!input) return '';
+          const encoder = new TextEncoder();
+          const data = encoder.encode(input);
+          const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+          const hashArray = Array.from(new Uint8Array(hashBuffer));
+          const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+          return hashHex.substring(0, 32);
+        };
+
+        const clientName = getCookie('clientName');
         const savedUserId = localStorage.getItem('last_session_id');
-        if (savedUserId) {
+
+        // 存储 clientName
+        if (clientName) {
+          dispatch({ type: 'SET_CLIENT_NAME', payload: clientName });
+        }
+
+        // 使用 clientName 的哈希值作为 userId
+        let userId = savedUserId;
+        if (clientName) {
+          userId = await hashTo32Bytes(clientName);
+          console.log('使用 clientName 生成 userId:', clientName, '->', userId);
+          // 更新 localStorage
+          if (savedUserId !== userId) {
+            localStorage.setItem('last_session_id', userId);
+          }
+        }
+
+        if (userId) {
           try {
-            console.log('尝试自动登录:', savedUserId);
-            await apiService.login({ session_id: savedUserId });
-            dispatch({ type: 'LOGIN_SUCCESS', payload: savedUserId });
+            console.log('尝试自动登录:', userId);
+            await apiService.login({ session_id: userId });
+            dispatch({ type: 'LOGIN_SUCCESS', payload: userId });
             
             // 加载用户数据
             // 注意：这里我们不能直接调用actions，因为actions还没定义
@@ -220,31 +289,31 @@ export function AppProvider({ children }: { children: ReactNode }) {
             
             // 1. 加载会话
             try {
-              const { sessions } = await apiService.getUserSessions(savedUserId);
+              const { sessions } = await apiService.getUserSessions(userId);
               if (sessions && sessions.length > 0) {
                 dispatch({ type: 'SET_CHAT_SESSIONS', payload: sessions });
-                
+
                 // 恢复上次活跃的会话
-                const lastActiveChatId = localStorage.getItem(`last_active_chat_${savedUserId}`);
+                const lastActiveChatId = localStorage.getItem(`last_active_chat_${userId}`);
                 let targetSession = null;
-                
+
                 if (lastActiveChatId) {
                   targetSession = sessions.find((s: any) => s.chat_id === lastActiveChatId);
                 }
-                
+
                 if (!targetSession) {
                   targetSession = sessions[0];
                 }
-                
+
                 if (targetSession) {
-                  dispatch({ 
-                    type: 'SET_CURRENT_CHAT_SESSION', 
+                  dispatch({
+                    type: 'SET_CURRENT_CHAT_SESSION',
                     payload: {
                       chat_id: targetSession.chat_id,
                       user_id: targetSession.user_id,
                       title: targetSession.title,
                       history: targetSession.history,
-                    } 
+                    }
                   });
                 }
               }
@@ -254,10 +323,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
             // 2. 加载文件
             try {
-              const { files } = await apiService.getFiles(savedUserId);
+              const { files } = await apiService.getFiles(userId);
               dispatch({ type: 'UPDATE_FILES', payload: files });
             } catch (err) {
               console.warn('自动登录加载文件失败:', err);
+            }
+
+            try {
+              const { tasks } = await apiService.getArtifacts(userId);
+              dispatch({ type: 'UPDATE_ARTIFACTS', payload: tasks });
+            } catch (err) {
+              console.warn('自动登录加载 artifact 记录失败:', err);
             }
 
           } catch (loginError) {
@@ -281,13 +357,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (state.isAuthenticated && state.userId) {
       const handleWSMessage = (message: any) => {
+        if (message.chat_id && message.chat_id !== currentChatIdRef.current) {
+          return;
+        }
         switch (message.type) {
+          case 'agent_status':
+            if (!message.chat_id || message.chat_id === currentChatIdRef.current) {
+              dispatch({ type: 'SET_AGENT_STATUS', payload: { status: message.status || 'idle', progress: message.progress } });
+            }
+            break;
           case 'streaming_response':
+            dispatch({ type: 'SET_AGENT_STATUS', payload: { status: 'in_progress', progress: 'Agent 正在生成回复' } });
             dispatch({ type: 'UPDATE_STREAMING_RESPONSE', payload: message.content || '' });
             break;
           case 'final_response':
             dispatch({ type: 'UPDATE_STREAMING_RESPONSE', payload: message.content || '' });
-            // 标记消息完成
+            // 标记消息完成，包含token使用和计费信息
             if (state.currentChatSession?.history.length) {
               const lastMessage = state.currentChatSession.history[state.currentChatSession.history.length - 1];
               if (lastMessage.role === 'assistant') {
@@ -295,6 +380,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
                 updatedHistory[updatedHistory.length - 1] = {
                   ...lastMessage,
                   timestamp: new Date().toISOString(),
+                  usage_metadata: message.usage_metadata,
+                  charge_result: message.charge_result,
                 };
                 dispatch({
                   type: 'SET_CURRENT_CHAT_SESSION',
@@ -303,15 +390,45 @@ export function AppProvider({ children }: { children: ReactNode }) {
                     history: updatedHistory,
                   },
                 });
+
+                // 添加Token消耗和计费日志
+                console.log('='.repeat(60));
+                console.log('LLM Token消耗信息:');
+                if (message.usage_metadata) {
+                  console.log('  输入Token (prompt_tokens):', message.usage_metadata.prompt_tokens || 0);
+                  console.log('  输出Token (candidates_tokens):', message.usage_metadata.candidates_tokens || 0);
+                  console.log('  总Token (total_tokens):', message.usage_metadata.total_tokens || 0);
+                } else {
+                  console.log('  未收到Token使用信息');
+                }
+
+                console.log('');
+                console.log('光子计费信息:');
+                if (message.charge_result) {
+                  console.log('  收费状态:', message.charge_result.success ? '✓ 成功' : '✗ 失败');
+                  console.log('  状态码:', message.charge_result.code);
+                  console.log('  消息:', message.charge_result.message);
+                  console.log('  消耗光子:', message.charge_result.photon_amount || 0);
+                  console.log('  消费金额 (RMB):', (message.charge_result.rmb_amount || 0).toFixed(2), '元');
+                  if (message.charge_result.biz_no) {
+                    console.log('  订单号:', message.charge_result.biz_no);
+                  }
+                } else {
+                  console.log('  未收到计费信息');
+                }
+                console.log('='.repeat(60));
               }
             }
             dispatch({ type: 'SET_RESPONDING', payload: false });
-            
+            dispatch({ type: 'SET_AGENT_STATUS', payload: { status: 'idle' } });
+
             // 任务完成后刷新文件列表，因为Agent可能生成了新文件
             actions.loadFiles();
+            actions.loadArtifacts();
             break;
           case 'error':
             dispatch({ type: 'SET_ERROR', payload: message.message || 'WebSocket错误' });
+            dispatch({ type: 'SET_AGENT_STATUS', payload: { status: 'idle' } });
             break;
           case 'tool_modify_required':
             // 存储当前的响应内容作为待处理的工具响应
@@ -320,6 +437,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
             if (lastMessage && lastMessage.role === 'assistant') {
               dispatch({ type: 'SET_PENDING_TOOL_RESPONSE', payload: lastMessage.content });
             }
+            break;
+          case 'workflow_plan_required':
+            dispatch({ type: 'SET_PENDING_WORKFLOW_PLAN', payload: message.workflow_plan || null });
             break;
         }
       };
@@ -397,6 +517,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }
 
         await actions.loadFiles();
+        await actions.loadArtifacts();
       } catch (error) {
         console.error('登录失败:', error);
         const errorMessage = error instanceof Error ? error.message : '登录失败，请检查网络连接';
@@ -516,32 +637,37 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (!targetUserId) return;
 
       try {
+        // 清除响应状态，允许切换会话
+        if (state.responding) {
+          dispatch({ type: 'SET_RESPONDING', payload: false });
+        }
+
         // 优先从state中查找，因为state应该是最新的
         // 注意：这里的state.chatSessions可能也是旧的，如果刚加载完
         // 但我们已经通过loadChatHistory更新了state，不过在同一个闭包里state没变
         // 所以这里最好重新获取一下，或者依赖传入的参数（如果能传入sessions最好）
         // 简单起见，我们尝试从localStorage读取作为兜底，或者信任state（如果是在后续渲染周期调用）
-        
+
         // 在login流程中，loadChatHistory刚跑完，state.chatSessions是旧的([])
         // 所以必须从localStorage或者API重新获取，或者...
         // 实际上loadChatHistory返回了sessions，login函数里有sessions变量
         // 但switchToChatSession无法直接访问那个变量除非传进来
-        
+
         // 让我们尝试从localStorage读取，因为loadChatHistory应该已经更新了localStorage (通过useEffect? 不，useEffect也是异步的)
         // 等等，loadChatHistory dispatch了SET_CHAT_SESSIONS，但useEffect依赖state.chatSessions
         // 如果state没变，useEffect不会触发？
         // 不，dispatch触发重渲染，useEffect在重渲染后运行。
         // 但在login函数执行期间，重渲染还没发生。
-        
+
         // 所以：loadChatHistory -> dispatch -> (login continues) -> switchToChatSession
         // 此时 localStorage 可能还没更新！
-        
-        // 最稳妥的办法：Login直接调用 dispatch({ type: 'SET_CURRENT_CHAT_SESSION', ... }) 
+
+        // 最稳妥的办法：Login直接调用 dispatch({ type: 'SET_CURRENT_CHAT_SESSION', ... })
         // 而不是调用 switchToChatSession action?
         // 或者让 switchToChatSession 接受 sessions 数组?
-        
+
         let targetSession = state.chatSessions.find(s => s.chat_id === chatId);
-        
+
         if (!targetSession) {
              const savedSessions = localStorage.getItem(`chat_sessions_${targetUserId}`);
              if (savedSessions) {
@@ -549,10 +675,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
                targetSession = chatSessions.find(s => s.chat_id === chatId);
              }
         }
-        
+
         // 如果还是找不到（因为localStorage也没更新），我们需要一种方式
         // 也许我们应该让 switchToChatSession 支持传入 session 对象？
-        
+
         if (targetSession) {
             const currentChatSession: CurrentChatSession = {
               chat_id: targetSession.chat_id,
@@ -575,6 +701,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
         dispatch({ type: 'UPDATE_FILES', payload: files });
       } catch (error) {
         console.error('加载文件列表失败:', error);
+      }
+    },
+
+    loadArtifacts: async () => {
+      if (!state.userId) return;
+
+      try {
+        const { tasks } = await apiService.getArtifacts(state.userId);
+        dispatch({ type: 'UPDATE_ARTIFACTS', payload: tasks });
+      } catch (error) {
+        console.error('加载 artifact 记录失败:', error);
       }
     },
 
@@ -636,11 +773,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
     },
 
-    modifyParameters: async (modifiedSchema: any) => {
+    modifyParameters: async (request: ModifyParamsRequest) => {
       if (!state.userId) return;
 
       try {
-        await apiService.modifyParameters(state.userId, modifiedSchema);
+        await apiService.modifyParameters(request);
         // 清除待处理的工具响应
         dispatch({ type: 'SET_PENDING_TOOL_RESPONSE', payload: '' });
       } catch (error) {
@@ -657,6 +794,41 @@ export function AppProvider({ children }: { children: ReactNode }) {
       } catch (error) {
         console.error('获取参数schema失败:', error);
         return null;
+      }
+    },
+
+    getCurrentWorkflowPlan: async () => {
+      if (!state.userId) return null;
+
+      try {
+        const { workflow_plan } = await apiService.getCurrentWorkflowPlan(state.userId);
+        return workflow_plan && Object.keys(workflow_plan).length > 0 ? workflow_plan : null;
+      } catch (error) {
+        console.error('Failed to get workflow plan:', error);
+        return null;
+      }
+    },
+
+    decideWorkflowPlan: async (decision: 'approved' | 'rejected' | 'pilot_review') => {
+      if (!state.userId) return;
+
+      try {
+        const response = await apiService.decideWorkflowPlan({ session_id: state.userId, chat_id: state.currentChatSession?.chat_id, decision });
+        if (decision === 'pilot_review') {
+          dispatch({ type: 'SET_PENDING_WORKFLOW_PLAN', payload: response.workflow_plan || null });
+          message.success('Pilot review completed.');
+          return;
+        }
+
+        dispatch({ type: 'SET_PENDING_WORKFLOW_PLAN', payload: null });
+        if (decision === 'approved') {
+          message.success('Workflow approved. Pilot is starting execution.');
+        } else {
+          message.info('Workflow rejected.');
+          dispatch({ type: 'SET_RESPONDING', payload: false });
+        }
+      } catch (error) {
+        dispatch({ type: 'SET_ERROR', payload: error instanceof Error ? error.message : 'Workflow review failed' });
       }
     },
 
@@ -710,6 +882,25 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const newLang = state.language === 'zh' ? 'en' : 'zh';
       dispatch({ type: 'SET_LANGUAGE', payload: newLang });
       localStorage.setItem('app_language', newLang);
+    },
+
+    terminateExecution: async () => {
+      if (!state.userId) return;
+
+      try {
+        const response = await apiService.terminateExecution({ session_id: state.userId, chat_id: state.currentChatSession?.chat_id });
+        if (response.status === 'terminating') {
+          message.success('正在终止执行...');
+          // 清除待处理的工具响应
+          dispatch({ type: 'SET_PENDING_TOOL_RESPONSE', payload: '' });
+          // 清除响应状态
+          dispatch({ type: 'SET_RESPONDING', payload: false });
+        } else {
+          message.info(response.message || '没有正在执行的任务');
+        }
+      } catch (error) {
+        dispatch({ type: 'SET_ERROR', payload: error instanceof Error ? error.message : '终止执行失败' });
+      }
     },
   };
 

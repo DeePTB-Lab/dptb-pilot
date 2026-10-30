@@ -42,6 +42,11 @@ function SessionPanel() {
     }
 
     try {
+      // 如果AI正在响应，先清除响应状态
+      if (state.responding) {
+        // 不需要等待，直接切换会话即可
+        // 新会话加载后会自动清除响应状态
+      }
       await actions.switchToChatSession(chatId);
     } catch (error) {
       message.error(t.failedSwitchSession);

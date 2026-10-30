@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "dptb-pilot": {
+      "command": "powershell",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "./mcp_server/run.ps1"
+      ]
+    }
+  }
+}

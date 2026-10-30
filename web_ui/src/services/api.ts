@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { LoginRequest, LoginResponse, FileInfo, ToolSchema, WSMessage, AppConfig, ChatMessage } from '../types';
+import type { LoginRequest, LoginResponse, FileInfo, ArtifactTask, ToolSchema, WSMessage, AppConfig, ChatMessage, ModifyParamsRequest, TerminateExecutionRequest, TerminateExecutionResponse, WorkflowPlan, WorkflowPlanDecisionRequest } from '../types';
 
 // 强制使用相对路径，确保通过Vite代理
 const API_BASE_URL = '/api';
@@ -111,18 +111,36 @@ export const apiService = {
     return response.data;
   },
 
+  async getCurrentWorkflowPlan(sessionId: string): Promise<{ workflow_plan: WorkflowPlan }> {
+    const response = await api.get(`/workflow-plan/${sessionId}`);
+    return response.data;
+  },
+
+  async decideWorkflowPlan(request: WorkflowPlanDecisionRequest): Promise<{ message: string; decision: string; workflow_plan?: WorkflowPlan }> {
+    const response = await api.post('/workflow-plan/decision', request);
+    return response.data;
+  },
+
   // 提交修改后的参数
-  async modifyParameters(sessionId: string, modifiedSchema: ToolSchema): Promise<{ message: string; modified_args: any }> {
-    const response = await api.post('/modify-params', {
-      session_id: sessionId,
-      modified_schema: modifiedSchema,
-    });
+  async modifyParameters(request: ModifyParamsRequest): Promise<{ message: string; modified_args: any }> {
+    const response = await api.post('/modify-params', request);
+    return response.data;
+  },
+
+  // 终止执行
+  async terminateExecution(request: TerminateExecutionRequest): Promise<TerminateExecutionResponse> {
+    const response = await api.post('/terminate-execution', request);
     return response.data;
   },
 
   // 文件管理相关
   async getFiles(sessionId: string): Promise<{ files: FileInfo[] }> {
     const response = await api.get(`/files/${sessionId}`);
+    return response.data;
+  },
+
+  async getArtifacts(sessionId: string): Promise<{ tasks: ArtifactTask[] }> {
+    const response = await api.get(`/artifacts/${sessionId}`);
     return response.data;
   },
 
@@ -157,10 +175,13 @@ export const apiService = {
 // WebSocket连接
 export class WebSocketService {
   private ws: WebSocket | null = null;
+  private sessionId = '';
+  private chatSockets = new Map<string, WebSocket>();
 
   private messageHandlers: ((message: WSMessage) => void)[] = [];
 
   connect(sessionId: string): Promise<void> {
+    this.sessionId = sessionId;
     return new Promise((resolve, reject) => {
 
       // 使用相对路径或根据环境构造WebSocket URL
@@ -190,6 +211,7 @@ export class WebSocketService {
         this.ws.onmessage = (event) => {
           try {
             const message: WSMessage = JSON.parse(event.data);
+            console.log('WebSocket收到消息:', message.type, message);
             this.messageHandlers.forEach(handler => handler(message));
           } catch (error) {
             console.error('解析WebSocket消息失败:', error);
@@ -215,17 +237,32 @@ export class WebSocketService {
       this.ws.close();
       this.ws = null;
     }
+    this.chatSockets.forEach(socket => socket.close());
+    this.chatSockets.clear();
     this.messageHandlers = [];
   }
 
   sendMessage(message: string, chatId?: string) {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      const payload = { message, chat_id: chatId };
-      console.log('即将通过WebSocket发送消息:', JSON.stringify(payload));
-      this.ws.send(JSON.stringify(payload));
-    } else {
-      throw new Error('WebSocket连接未建立');
+    const key = chatId || this.sessionId;
+    const payload = JSON.stringify({ message, chat_id: chatId });
+    const existing = this.chatSockets.get(key);
+    if (existing?.readyState === WebSocket.OPEN) {
+      existing.send(payload);
+      return;
     }
+
+    const base = API_BASE_URL.startsWith('/')
+      ? `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host.replace(/^0\.0\.0\.0/, '127.0.0.1')}`
+      : API_BASE_URL.replace('http', 'ws');
+    const socket = new WebSocket(`${base}/ws/chat/${this.sessionId}`);
+    this.chatSockets.set(key, socket);
+    socket.onmessage = event => {
+      const incoming: WSMessage = JSON.parse(event.data);
+      this.messageHandlers.forEach(handler => handler(incoming));
+    };
+    socket.onopen = () => socket.send(payload);
+    socket.onclose = () => this.chatSockets.delete(key);
+    socket.onerror = () => this.chatSockets.delete(key);
   }
 
   onMessage(handler: (message: WSMessage) => void) {
