@@ -317,6 +317,11 @@ def _generate_uniaxial_strain_lammps_input_file(output_root,
     return {"in_lammps_file_paths":in_lammps_file_paths, "lammps_data_file_paths":lammps_data_file_paths}
 
 
+def _generate_uniaxial_strain_input_file(*args, **kwargs):
+    """Backward-compatible name for the strain plus LAMMPS input generator."""
+    return _generate_uniaxial_strain_lammps_input_file(*args, **kwargs)
+
+
 def _generate_uniaxial_strain_ensemble_lammps_input_file(output_root,
                                                          poscar_file: Path,
                                                          strain_list: List[float],

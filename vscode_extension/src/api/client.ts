@@ -1,5 +1,7 @@
 import type {
   AppConfig,
+  AgentStatus,
+  ArtifactTask,
   ChatSession,
   ExecutionConfigRequest,
   FileInfo,
@@ -9,13 +11,15 @@ import type {
   TerminateExecutionRequest,
   TerminateExecutionResponse,
   ToolSchema,
+  WorkflowDecision,
+  WorkflowPlan,
   WSMessage
 } from '../shared/types';
 import { apiUrl, normalizeBaseUrl, websocketUrl } from './url';
 
 export interface UploadPayload {
   name: string;
-  bytes: Uint8Array | ArrayBuffer;
+  content: Blob | Uint8Array | ArrayBuffer;
   type?: string;
 }
 
@@ -92,7 +96,7 @@ export class DptbPilotClient {
     remote_enabled: boolean;
   }> {
     return this.request('/api/execution-config', {
-      method: 'POST',
+      method: 'PUT',
       body: JSON.stringify(data)
     });
   }
@@ -103,6 +107,11 @@ export class DptbPilotClient {
 
   getConfig(): Promise<AppConfig> {
     return this.request('/api/config');
+  }
+
+  getAgentStatus(sessionId: string, chatId?: string): Promise<AgentStatus> {
+    const query = chatId ? `?chat_id=${encodeURIComponent(chatId)}` : '';
+    return this.request(`/api/agent-status/${encodeURIComponent(sessionId)}${query}`);
   }
 
   getUserSessions(userId: string): Promise<{ sessions: ChatSession[] }> {
@@ -120,13 +129,28 @@ export class DptbPilotClient {
     return this.request(`/api/files/${encodeURIComponent(sessionId)}`);
   }
 
+  getArtifacts(sessionId: string): Promise<{ tasks: ArtifactTask[] }> {
+    return this.request(`/api/artifacts/${encodeURIComponent(sessionId)}`);
+  }
+
+  stageArtifact(sessionId: string, artifactId: string): Promise<{ artifact: ArtifactTask['artifacts'][number] }> {
+    return this.request(
+      `/api/artifacts/${encodeURIComponent(sessionId)}/${encodeURIComponent(artifactId)}/stage`,
+      { method: 'POST' }
+    );
+  }
+
   async uploadFiles(sessionId: string, files: UploadPayload[]): Promise<{ uploaded_files: FileInfo[] }> {
     const formData = new FormData();
     files.forEach((file) => {
-      const bytes = file.bytes instanceof ArrayBuffer
-        ? file.bytes
-        : file.bytes.buffer.slice(file.bytes.byteOffset, file.bytes.byteOffset + file.bytes.byteLength) as ArrayBuffer;
-      const blob = new Blob([bytes], { type: file.type || 'application/octet-stream' });
+      const content = file.content;
+      const blob = content instanceof Blob
+        ? content
+        : new Blob([
+          content instanceof ArrayBuffer
+            ? content
+            : content.buffer.slice(content.byteOffset, content.byteOffset + content.byteLength) as ArrayBuffer
+        ], { type: file.type || 'application/octet-stream' });
       formData.append('files', blob, file.name);
     });
 
@@ -137,7 +161,7 @@ export class DptbPilotClient {
   }
 
   getDownloadUrl(sessionId: string, filename: string): string {
-    return apiUrl(this.baseUrl, `/api/download/${encodeURIComponent(sessionId)}/${encodeURI(filename)}`);
+    return apiUrl(this.baseUrl, `/api/download/${encodeURIComponent(sessionId)}/${encodeWorkspacePath(filename)}`);
   }
 
   async downloadFile(sessionId: string, filename: string): Promise<Blob> {
@@ -164,6 +188,22 @@ export class DptbPilotClient {
     return this.request(`/api/schema/${encodeURIComponent(sessionId)}`);
   }
 
+  getCurrentWorkflowPlan(sessionId: string, chatId?: string): Promise<{ workflow_plan: WorkflowPlan | Record<string, never> }> {
+    const query = chatId ? `?chat_id=${encodeURIComponent(chatId)}` : '';
+    return this.request(`/api/workflow-plan/${encodeURIComponent(sessionId)}${query}`);
+  }
+
+  decideWorkflowPlan(sessionId: string, decision: WorkflowDecision, chatId?: string): Promise<{
+    message: string;
+    decision: WorkflowDecision;
+    workflow_plan?: WorkflowPlan;
+  }> {
+    return this.request('/api/workflow-plan/decision', {
+      method: 'POST',
+      body: JSON.stringify({ session_id: sessionId, chat_id: chatId, decision })
+    });
+  }
+
   modifyParameters(request: ModifyParamsRequest): Promise<{ message: string; modified_args: unknown }> {
     return this.request('/api/modify-params', {
       method: 'POST',
@@ -178,11 +218,25 @@ export class DptbPilotClient {
     });
   }
 
-  createWebSocket(sessionId: string): WebSocket {
-    return new WebSocket(websocketUrl(this.baseUrl, sessionId));
+  createWebSocket(sessionId: string, chatId?: string): WebSocket {
+    return new WebSocket(websocketUrl(this.baseUrl, sessionId, chatId));
   }
 
   static parseWSMessage(data: string): WSMessage {
     return JSON.parse(data) as WSMessage;
   }
+}
+
+export function encodeWorkspacePath(filename: string): string {
+  return normalizeWorkspacePath(filename)
+    .replace(/\\/g, '/')
+    .split('/')
+    .filter(Boolean)
+    .map((segment) => encodeURIComponent(segment))
+    .join('/');
+}
+
+/** Normalize artifact paths from older backends before building a download URL. */
+export function normalizeWorkspacePath(filename: string): string {
+  return String(filename || '').trim().replace(/[\\/]+$/, '');
 }

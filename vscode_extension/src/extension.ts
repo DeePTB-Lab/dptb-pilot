@@ -1,10 +1,18 @@
+import { openAsBlob } from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
-import { DEFAULT_SERVER_URL, normalizeBaseUrl } from './api/url';
-import type { HostToWebviewMessage, VisualizationPayload, WebviewToHostMessage } from './shared/types';
+import { DptbPilotClient } from './api/client';
+import { apiUrl, DEFAULT_SERVER_URL, normalizeBaseUrl } from './api/url';
+import type { ExecutionPreferences, HostToWebviewMessage, VisualizationPayload, WebviewToHostMessage } from './shared/types';
 
 const CONFIG_SECTION = 'dptbPilot';
 const VIEW_TYPE = 'dptbPilot.chat';
+const EXECUTION_PREFERENCES_KEY = 'dptbPilot.executionPreferences';
+
+interface UploadTarget {
+  serverUrl: string;
+  sessionId: string;
+}
 
 class DptbPilotPanel {
   private static currentPanel: DptbPilotPanel | undefined;
@@ -56,6 +64,7 @@ class DptbPilotPanel {
         serverUrl: config.get<string>('serverUrl') || DEFAULT_SERVER_URL,
         sessionId: config.get<string>('sessionId') || '',
         extensionUri: this.context.extensionUri.toString(),
+        executionPreferences: this.context.globalState.get<ExecutionPreferences>(EXECUTION_PREFERENCES_KEY),
         matterViz: {
           commandId: config.get<string>('matterViz.commandId') || '',
           uriTemplate: config.get<string>('matterViz.uriTemplate') || '',
@@ -78,11 +87,20 @@ class DptbPilotPanel {
         await vscode.workspace.getConfiguration(CONFIG_SECTION).update('sessionId', message.payload.sessionId, vscode.ConfigurationTarget.Global);
         this.post({ type: 'sessionChanged', payload: { sessionId: message.payload.sessionId } });
         break;
+      case 'setExecutionPreferences':
+        await this.context.globalState.update(EXECUTION_PREFERENCES_KEY, message.payload);
+        break;
       case 'pickFiles':
-        await this.pickAndSendFiles();
+        await this.pickAndUploadFiles(message.payload);
         break;
       case 'uploadCurrentFile':
-        await this.sendCurrentFile();
+        await this.uploadCurrentEditorFile(message.payload);
+        break;
+      case 'downloadArtifact':
+        await this.downloadArtifact(message.payload);
+        break;
+      case 'copyText':
+        await vscode.env.clipboard.writeText(message.payload.text);
         break;
       case 'saveSecret':
         await this.context.secrets.store(message.payload.key, message.payload.value);
@@ -99,36 +117,122 @@ class DptbPilotPanel {
   }
 
   async uploadCurrentFile(): Promise<void> {
-    await this.sendCurrentFile();
+    const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
+    await this.uploadCurrentEditorFile({
+      serverUrl: config.get<string>('serverUrl') || DEFAULT_SERVER_URL,
+      sessionId: config.get<string>('sessionId') || ''
+    });
   }
 
-  private async pickAndSendFiles(): Promise<void> {
+  private async pickAndUploadFiles(target: UploadTarget): Promise<void> {
     const uris = await vscode.window.showOpenDialog({ canSelectFiles: true, canSelectFolders: false, canSelectMany: true });
     if (!uris?.length) return;
 
-    for (const uri of uris) {
-      await this.sendFile(uri);
-    }
+    await this.uploadFiles(uris, target);
   }
 
-  private async sendCurrentFile(): Promise<void> {
+  private async uploadCurrentEditorFile(target: UploadTarget): Promise<void> {
     const uri = vscode.window.activeTextEditor?.document.uri;
     if (!uri || uri.scheme !== 'file') {
       void vscode.window.showWarningMessage('No file-backed editor is active.');
       return;
     }
-    await this.sendFile(uri);
+    await this.uploadFiles([uri], target);
   }
 
-  private async sendFile(uri: vscode.Uri): Promise<void> {
-    const bytes = await vscode.workspace.fs.readFile(uri);
-    this.post({
-      type: 'uploadFile',
-      payload: {
-        name: path.basename(uri.fsPath),
-        bytes: Array.from(bytes)
-      }
+  private async uploadFiles(uris: vscode.Uri[], target: UploadTarget): Promise<void> {
+    if (!target.sessionId.trim()) {
+      void vscode.window.showWarningMessage('Connect DPTB Pilot and select a session before uploading files.');
+      return;
+    }
+
+    let serverUrl: string;
+    try {
+      serverUrl = normalizeBaseUrl(target.serverUrl);
+    } catch (error) {
+      const message = `Cannot upload files: ${errorMessage(error)}`;
+      this.post({ type: 'uploadFailed', payload: { message } });
+      void vscode.window.showErrorMessage(message);
+      return;
+    }
+
+    const client = new DptbPilotClient(serverUrl);
+    const uploadedFiles: string[] = [];
+
+    try {
+      await vscode.window.withProgress({
+        location: vscode.ProgressLocation.Notification,
+        title: uris.length === 1 ? `Uploading ${uploadName(uris[0])}` : `Uploading ${uris.length} files`,
+        cancellable: false
+      }, async (progress) => {
+        for (const [index, uri] of uris.entries()) {
+          const name = uploadName(uri);
+          progress.report({ message: name, increment: index === 0 ? 0 : 100 / uris.length });
+          let content: Blob;
+          if (uri.scheme === 'file') {
+            content = await openAsBlob(uri.fsPath);
+          } else {
+            const bytes = await vscode.workspace.fs.readFile(uri);
+            const buffer = bytes.buffer.slice(
+              bytes.byteOffset,
+              bytes.byteOffset + bytes.byteLength
+            ) as ArrayBuffer;
+            content = new Blob([buffer]);
+          }
+          const response = await client.uploadFiles(target.sessionId, [{ name, content }]);
+          if (!response.uploaded_files.some((file) => file.name === name)) {
+            throw new Error(`The server did not accept '${name}'. The backend may have an older file-size limit.`);
+          }
+          uploadedFiles.push(name);
+        }
+      });
+
+      this.post({ type: 'filesChanged', payload: { uploadedFiles } });
+      void vscode.window.showInformationMessage(
+        uploadedFiles.length === 1
+          ? `Uploaded ${uploadedFiles[0]}.`
+          : `Uploaded ${uploadedFiles.length} files.`
+      );
+    } catch (error) {
+      const message = `Failed to upload: ${errorMessage(error)}`;
+      this.post({ type: 'uploadFailed', payload: { message } });
+      void vscode.window.showErrorMessage(message);
+    }
+  }
+
+  private async downloadArtifact(payload: Extract<WebviewToHostMessage, { type: 'downloadArtifact' }>['payload']): Promise<void> {
+    const suggestedName = path.posix.basename(payload.suggestedName.replace(/\\/g, '/')) || 'artifact';
+    const defaultUri = vscode.workspace.workspaceFolders?.[0]
+      ? vscode.Uri.joinPath(vscode.workspace.workspaceFolders[0].uri, suggestedName)
+      : vscode.Uri.file(path.join(this.context.globalStorageUri.fsPath, suggestedName));
+    const destination = await vscode.window.showSaveDialog({
+      title: 'Download DPTB Pilot Artifact',
+      defaultUri,
+      saveLabel: 'Download'
     });
+    if (!destination) return;
+
+    try {
+      await vscode.window.withProgress({
+        location: vscode.ProgressLocation.Notification,
+        title: `Downloading ${suggestedName}`,
+        cancellable: false
+      }, async () => {
+        const workspacePath = encodeWorkspacePath(payload.workspacePath);
+        const downloadUrl = apiUrl(
+          vscode.workspace.getConfiguration(CONFIG_SECTION).get<string>('serverUrl') || DEFAULT_SERVER_URL,
+          `/api/download/${encodeURIComponent(payload.sessionId)}/${workspacePath}`
+        );
+        const response = await fetch(downloadUrl);
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        await vscode.workspace.fs.writeFile(destination, new Uint8Array(await response.arrayBuffer()));
+      });
+      void vscode.window.showInformationMessage(`Artifact saved to ${destination.fsPath || destination.toString()}.`);
+    } catch (error) {
+      void vscode.window.showErrorMessage(`Failed to download artifact: ${errorMessage(error)}`);
+    }
   }
 
   private getHtmlForWebview(): string {
@@ -272,4 +376,17 @@ function getNonce(): string {
     text += chars.charAt(Math.floor(Math.random() * chars.length));
   }
   return text;
+}
+
+function encodeWorkspacePath(workspacePath: string): string {
+  return String(workspacePath || '').trim().replace(/[\\/]+$/, '')
+    .replace(/\\/g, '/')
+    .split('/')
+    .filter(Boolean)
+    .map((segment) => encodeURIComponent(segment))
+    .join('/');
+}
+
+function uploadName(uri: vscode.Uri): string {
+  return uri.scheme === 'file' ? path.basename(uri.fsPath) : path.posix.basename(uri.path);
 }

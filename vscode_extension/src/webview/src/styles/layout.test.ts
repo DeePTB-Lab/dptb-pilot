@@ -25,4 +25,10 @@ describe('chat layout scrolling', () => {
     expect(rule('.message-list')).toContain('overflow-y: auto');
     expect(rule('.composer')).toContain('flex: 0 0 auto');
   });
+
+  it('allows rendered chat content to be selected', () => {
+    const selectionRule = rule('.message-content, .message-content *, .tool-result-body, .tool-result-body *, .modal, .modal *');
+    expect(selectionRule).toContain('user-select: text');
+    expect(selectionRule).toContain('-webkit-user-select: text');
+  });
 });

@@ -2,7 +2,7 @@
   "name": "dptb-pilot-vscode",
   "displayName": "DPTB Pilot",
   "description": "Independent VS Code interaction UI for dptb-pilot.",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "publisher": "dptb-pilot",
   "license": "GPL-3.0-only",
   "repository": {
@@ -13,7 +13,10 @@
   "engines": {
     "vscode": "^1.92.0"
   },
-  "categories": ["Other", "Machine Learning"],
+  "categories": [
+    "Other",
+    "Machine Learning"
+  ],
   "activationEvents": [
     "onCommand:dptbPilot.openChat",
     "onCommand:dptbPilot.connectServer",
@@ -97,13 +100,15 @@
   "dependencies": {
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "react-markdown": "^9.0.1"
+    "react-markdown": "^9.0.1",
+    "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
-    "@vitejs/plugin-react": "^4.3.4",    "@types/node": "^20.17.6",
+    "@types/node": "^20.17.6",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@types/vscode": "^1.92.0",
+    "@vitejs/plugin-react": "^4.3.4",
     "@vscode/vsce": "^3.2.1",
     "npm-run-all": "^4.1.5",
     "typescript": "^5.6.3",

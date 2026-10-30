@@ -3,7 +3,7 @@
 from dptb_pilot.tools.modules.abacus.tools import (  # noqa: F401
     abacus_band_gap,
     abacus_band_plot,
-    abacus_get_efermi,
+    abacus_get_fermi_level,
     run_abacus,
     run_abacus_scf_nscf,
 )
@@ -11,7 +11,7 @@ from dptb_pilot.tools.modules.abacus.tools import (  # noqa: F401
 __all__ = [
     "abacus_band_gap",
     "abacus_band_plot",
-    "abacus_get_efermi",
+    "abacus_get_fermi_level",
     "run_abacus",
     "run_abacus_scf_nscf",
 ]

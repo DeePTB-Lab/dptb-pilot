@@ -1,22 +1,51 @@
-﻿# DPTB Pilot Codex 插件
+# DPTB Pilot Codex 插件
 
-这个插件把已经运行的 DPTB Pilot FastAPI 后端接入 Codex。插件本身是 headless 的，不嵌入 Web UI 或 VS Code webview，而是通过 MCP 工具让 Codex 直接访问 Pilot 会话。
+该插件将 VS Code 扩展的业务能力迁移为 Codex 原生 MCP 工具、结构化结果和可点击资源，不维护独立 Webview。默认连接 `http://localhost:50003`。
 
-English instructions are available in [README_en.md](README_en.md)。
+English documentation: [README_en.md](README_en.md)
 
-## 提供的工具
+## 功能
 
-- `dptb_status`：检查后端健康状态，并确认当前 session 可以登录。
-- `dptb_ask`：向配置好的 DPTB Pilot agent 发送问题或任务请求。
-- `dptb_list_files`：列出当前 session 工作区中的文件。
-- `dptb_upload_file`：上传本地文件到当前 DPTB Pilot session。
-- `dptb_download_file`：把 DPTB Pilot session 中的文件下载到本地。
-- `dptb_get_pending_schema`：读取当前等待确认的工具参数 schema。
-- `dptb_terminate_execution`：终止当前 session 中正在执行的任务。
+- 连接 profile、32 位 session 自动生成、健康与 capability 协商。
+- 多 chat 创建、选择、删除、历史隔离与持久化。
+- 异步单任务、FIFO 队列、等待/取消，以及带 `depends_on` 的并行任务图。
+- 工作流计划、Pilot Review、批准/拒绝和结构化参数确认。
+- Local、Bohrium、Slurm profile；并行模式和最大并发数设置。
+- 多文件上传、预览、删除和受控目录下载。
+- `dptb://file/...` 与 `dptb://artifact/...` 可点击资源，远程 artifact staging。
+- 原生图片/文本展示、MatterViz 可选导出，以及 Pilot token/Photon/RMB 汇总。
 
-## 运行要求
+`dptb_ask` 仅作为兼容入口，内部使用 `dptb_submit_task` + `dptb_wait_run`。
 
-先在本仓库准备好 Python 环境，并启动 DPTB Pilot 后端：
+## 严格科学计算策略
+
+材料、物理、电子结构、能带/DOS、输运/NEGF、分子动力学和其他科学数值计算必须使用 `dptb_route_scientific_task`。插件通过默认发现的 `hooks/hooks.json`：
+
+- 在 `UserPromptSubmit` 标记科学任务；
+- 在 `PreToolUse` 阻止 Python、NumPy、SciPy、pymatgen、ASE、自定义公式和其他非 DPTB 计算工具；
+- 要求后端具有严格 capability；
+- 仅接受包含 `run_id`、backend build ID、实际 DPTB tool 列表和 `provenance.engine=dptb-pilot` 的完成结果。
+
+Pilot 离线、能力不足、hook 未被主机信任/触发或 provenance 不完整时直接停止，不做计算回退。插件安装后需要在 Codex 中信任 hooks，并新建任务加载新工具。
+
+## 配置
+
+配置读取顺序：`DPTB_PILOT_CONFIG` 指定文件，否则 `%USERPROFILE%\.dptb-pilot-codex\config.json`。旧扁平配置会自动升级为 v2。示例见 [config.example.json](config.example.json)。
+
+可覆盖的环境变量：
+
+```powershell
+$env:DPTB_PILOT_SERVER_URL = "http://localhost:50003"
+$env:DPTB_PILOT_SESSION_ID = "0123456789abcdef0123456789abcdef"
+$env:DPTB_PILOT_TIMEOUT_MS = "30000"
+$env:DPTB_PILOT_PYTHON = "C:\path\to\.venv\Scripts\python.exe"
+```
+
+Bohrium 密码只保存到操作系统凭据库。也可使用 `DPTB_BOHRIUM_PASSWORD` 或 `DPTB_BOHRIUM_PASSWORD_<PROFILE_ID>`，不会写入配置、日志或 MCP 返回。
+
+## 安装
+
+先准备依赖并启动工具服务与主后端：
 
 ```powershell
 uv sync
@@ -24,102 +53,26 @@ uv run dptb-tools
 uv run dptb-pilot
 ```
 
-插件的 MCP 适配器需要能使用包含 `mcp` 和 `httpx` 的 Python。推荐使用本仓库虚拟环境：
-
-```text
-C:/Users/lonya/PycharmProjects/dptb-pilot/.venv/Scripts/python.exe
-```
-
-## 安装到 Codex
-
-Codex 桌面端没有 `codex` 命令行工具，所以不能用 `codex plugin add`。安装流程分为两步：先运行 PowerShell 脚本把插件文件、配置和个人 marketplace 写到本地，然后在 Codex 桌面端打开 deeplink 完成安装。
-
-从插件目录运行安装脚本：
+本地首次安装：
 
 ```powershell
 cd C:\Users\lonya\PycharmProjects\dptb-pilot\codex_plugin\dptb-pilot
 .\scripts\install-local.ps1 `
   -Force `
   -PythonPath "C:\Users\lonya\PycharmProjects\dptb-pilot\.venv\Scripts\python.exe" `
-  -ServerUrl "http://localhost:8000" `
-  -SessionId "0123456789abcdef0123456789abcdef"
+  -ServerUrl "http://localhost:50003" `
+  -OpenDeeplink
 ```
 
-脚本会完成三件事：
+未提供 `SessionId` 时安装器自动生成 32 位 ID；已有 v1/v2 配置会被保留并迁移。脚本复制插件、写入个人 marketplace，并打开安装 deeplink。
 
-- 复制插件到 `%USERPROFILE%\plugins\dptb-pilot`
-- 写入连接配置到 `%USERPROFILE%\.dptb-pilot-codex\config.json`
-- 创建或更新个人 marketplace：`%USERPROFILE%\.agents\plugins\marketplace.json`
-
-脚本结尾会打印一个 deeplink，形如：
-
-```text
-codex://plugins/dptb-pilot?marketplacePath=C%3A%5CUsers%5Clonya%5C.agents%5Cplugins%5Cmarketplace.json
-```
-
-在 Codex 桌面端打开这个链接即可完成安装。也可以加 `-OpenDeeplink` 让脚本自动打开：
+## 开发验证
 
 ```powershell
-.\scripts\install-local.ps1 -Force -OpenDeeplink -PythonPath "..." -SessionId "..."
+uv run pytest tests/test_codex_plugin.py tests/test_server_codex_runtime.py
+uv run pytest
+cd vscode_extension
+npm test
 ```
 
-安装或更新插件后，开启一个新的 Codex 线程来测试新功能和 MCP 工具。
-
-## 手动配置
-
-如果不使用安装脚本，也可以手动创建配置文件：
-
-```json
-{
-  "server_url": "http://localhost:8000",
-  "session_id": "0123456789abcdef0123456789abcdef",
-  "timeout_ms": 30000,
-  "python_path": "C:/Users/lonya/PycharmProjects/dptb-pilot/.venv/Scripts/python.exe"
-}
-```
-
-推荐保存到：
-
-```text
-%USERPROFILE%\.dptb-pilot-codex\config.json
-```
-
-也可以通过环境变量指定：
-
-```powershell
-$env:DPTB_PILOT_CONFIG = "C:\absolute\path\to\config.json"
-$env:DPTB_PILOT_PYTHON = "C:\Users\lonya\PycharmProjects\dptb-pilot\.venv\Scripts\python.exe"
-```
-
-连接参数也支持直接使用环境变量：
-
-```powershell
-$env:DPTB_PILOT_SERVER_URL = "http://localhost:8000"
-$env:DPTB_PILOT_SESSION_ID = "0123456789abcdef0123456789abcdef"
-$env:DPTB_PILOT_TIMEOUT_MS = "30000"
-```
-
-`session_id` 必须是后端要求的 32 位字符串。
-
-## 本地开发
-
-修改插件后，重新运行安装脚本并再次打开 deeplink：
-
-```powershell
-.\scripts\install-local.ps1 -Force -SkipConfig -OpenDeeplink
-```
-
-`.mcp.json` 会启动 PowerShell wrapper：
-
-```text
-powershell -NoProfile -ExecutionPolicy Bypass -File ./mcp_server/run.ps1
-```
-
-wrapper 会按顺序查找 Python：
-
-1. `DPTB_PILOT_PYTHON`
-2. 配置文件中的 `python_path`
-3. 仓库或插件目录下的 `.venv\Scripts\python.exe`
-4. `PATH` 上的 `python`
-
-配置完成并启动后端后，可以先让 Codex 调用 `dptb_status`，确认连接正常后再使用 `dptb_ask` 发起实际任务。
+插件与 skill 还应分别通过 `validate_plugin.py` 和 `quick_validate.py`。本地更新使用 plugin-creator 的 cachebuster/reinstall 流程，更新后在 Codex 新建任务验收。

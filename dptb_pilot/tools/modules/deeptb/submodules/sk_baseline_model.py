@@ -20,7 +20,7 @@ log = logging.getLogger(__name__)
 def _band_with_baseline_model(
     structure_file_path: Path,
     basemodel: str = "poly4",
-    efermi: float = None,
+    fermi_level: float = None,
     emin: float = None,
     emax: float = None,
     get_fermi: bool = False,
@@ -32,7 +32,7 @@ def _band_with_baseline_model(
     参数:
         structure_file_path: 输入的结构文件路径（Path，应通过get_file_path得到）。结构文件应为vasp的格式
         basemodel: 使用的baseline model类型。可选：poly4，poly2
-        efermi: 指定使用的费米能级
+        fermi_level: 指定使用的费米能级
         emin: 能带下限
         emax: 能带上限
         get_fermi: 是否自动获取费米能级

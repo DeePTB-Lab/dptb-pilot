@@ -63,6 +63,47 @@ def generate_lammps_input_file(
     - ``relax``/``min``: energy minimization
     - ``ensemble``: use the ``ensemble`` argument
     - ``smart``/``nvt``/``npt``/``nve``: shorthand ensemble sampling modes
+
+    Parameters
+    ----------
+    struture_file_path : Path
+        Input POSCAR/VASP structure path. The misspelled parameter name is kept
+        for API compatibility.
+    strains : List[float], optional
+        Strain percentages. ``None`` creates one unstrained task.
+    lammps_run_method : str, optional
+        ``single``, ``relax``, ``ensemble``, or an ensemble shorthand described above.
+    axis : str or int, optional
+        Supercell/strain axis: ``auto``, ``x``, ``y``, ``z``, or its integer index.
+    target_length : float, optional
+        Target supercell length along the selected axis in Angstrom.
+    model_name : str, optional
+        DeepMD model filename referenced by generated LAMMPS inputs.
+    temps : List[float], optional
+        Temperatures in K for ensemble tasks; defaults to ``[300]``.
+    press : List[float], optional
+        Pressures in bar for ensemble tasks; defaults to ``[0]``.
+    ensemble : str, optional
+        Ensemble used when ``lammps_run_method`` is ``ensemble``.
+    dt : float, optional
+        MD timestep in ps.
+    nsteps : int, optional
+        MD step count or minimization iteration limit.
+    temp_0 : float, optional
+        Initial temperature in K for smart heating.
+    nstep_heating : int, optional
+        Heating steps in the smart workflow.
+    nstep_equil : int, optional
+        Equilibration steps in the smart workflow.
+    n_out : int, optional
+        Number of sampled structures requested by the smart workflow.
+    sample_interval : int, optional
+        Timestep interval between sampled structures.
+
+    Returns
+    -------
+    GenerateLammpsInputResult
+        Generated input/data paths, task directories, and task metadata.
     """
     return _generate_lammps_input_file(
         output_root='.',
@@ -214,6 +255,45 @@ def generate_uniaxial_strain_ensemble_input_file(
     task directory containing POSCAR, lammps.data, and in.lammps. The default
     ``smart`` ensemble writes a minimization, heating, equilibration, and
     trajectory-sampling workflow for ensemble-average structure sampling.
+
+    Parameters
+    ----------
+    struture_file_path : Path
+        Input POSCAR/VASP structure path. The misspelled parameter name is kept
+        for API compatibility.
+    strain_list : List[float]
+        Uniaxial strain percentages.
+    temps : List[float]
+        Temperatures in K; one task is generated per strain/temperature/pressure tuple.
+    press : List[float]
+        Pressures in bar.
+    ensemble : str, optional
+        LAMMPS ensemble: ``smart``, ``min``, ``nvt``, ``npt``, or ``nve``.
+    axis : str or int, optional
+        Supercell/strain axis: ``auto``, ``x``, ``y``, ``z``, or its integer index.
+    target_length : float, optional
+        Target supercell length along the selected axis in Angstrom.
+    model_name : str, optional
+        DeepMD model filename referenced by generated inputs.
+    dt : float, optional
+        MD timestep in ps.
+    nsteps : int, optional
+        MD step count for direct ensemble workflows.
+    temp_0 : float, optional
+        Initial temperature in K for smart heating.
+    nstep_heating : int, optional
+        Heating steps in the smart workflow.
+    nstep_equil : int, optional
+        Equilibration steps in the smart workflow.
+    n_out : int, optional
+        Number of sampled structures requested by the smart workflow.
+    sample_interval : int, optional
+        Timestep interval between sampled structures.
+
+    Returns
+    -------
+    GenerateUniaxialStrainEnsembleInputResult
+        Generated input/data paths and metadata for every task.
     """
     return _generate_uniaxial_strain_ensemble_lammps_input_file(
         output_root='.',
@@ -248,6 +328,25 @@ def generate_unstrained_lammps_input_file(
 
     The structure is expanded with the same supercell convention used by the
     uniaxial strain tools, but no strain is applied.
+
+    Parameters
+    ----------
+    struture_file_path : Path
+        Input POSCAR/VASP structure path. The misspelled parameter name is kept
+        for API compatibility.
+    axis : str or int, optional
+        Supercell axis: ``auto``, ``x``, ``y``, ``z``, or its integer index.
+    target_length : float, optional
+        Target supercell length along the selected axis in Angstrom.
+    model_name : str, optional
+        DeepMD model filename referenced by the generated LAMMPS input.
+    relax : bool, optional
+        Generate minimization commands when true, otherwise a static run.
+
+    Returns
+    -------
+    GenerateUnstrainedLammpsInputResult
+        Generated input/data paths and the unstrained task directory.
     """
     return _generate_unstrained_lammps_input_file(
         output_root='.',

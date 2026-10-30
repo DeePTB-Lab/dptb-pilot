@@ -24,20 +24,31 @@ export function normalizeBaseUrl(input: string): string {
 export function apiUrl(baseUrl: string, path: string): string {
   const url = new URL(normalizeBaseUrl(baseUrl));
   const basePath = url.pathname.replace(/\/+$/, '');
-  const cleanPath = `/${path.replace(/^\/+/, '')}`;
+  const [pathOnly, query = ''] = path.split('?', 2);
+  const cleanPath = `/${pathOnly.replace(/^\/+/, '')}`;
   url.pathname = basePath.endsWith('/api') && cleanPath.startsWith('/api/')
     ? `${basePath}${cleanPath.slice(4)}`
     : `${basePath}${cleanPath}`;
+  url.search = query;
   return url.toString();
 }
 
-export function websocketUrl(baseUrl: string, sessionId: string): string {
+export function resolveServerResourceUrl(baseUrl: string, resourceUrl: string): string {
+  const trimmed = resourceUrl.trim();
+  if (!trimmed || /^(?:[a-z][a-z\d+.-]*:|\/\/)/i.test(trimmed)) {
+    return trimmed;
+  }
+
+  return apiUrl(baseUrl, trimmed);
+}
+
+export function websocketUrl(baseUrl: string, sessionId: string, chatId?: string): string {
   const normalized = normalizeBaseUrl(baseUrl);
   const url = new URL(normalized);
   url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
   const basePath = url.pathname.replace(/\/+$/, '').replace(/\/api$/, '');
   url.pathname = `${basePath}/ws/chat/${encodeURIComponent(sessionId)}`;
-  url.search = '';
+  url.search = chatId ? `?chat_id=${encodeURIComponent(chatId)}` : '';
   url.hash = '';
   return url.toString();
 }

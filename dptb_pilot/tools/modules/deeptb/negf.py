@@ -39,6 +39,7 @@ def run_negf(
 
     # Resolve absolute paths
     work_dir = Path(work_path).absolute()
+    work_dir.mkdir(parents=True, exist_ok=True)
 
     if not config_file_path.exists():
         raise FileNotFoundError(f"Structure file not found: {config_file_path}")

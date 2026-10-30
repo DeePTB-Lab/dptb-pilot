@@ -1,8 +1,9 @@
-import React, { createContext, useContext, useReducer, ReactNode, useEffect } from 'react';
+import React, { createContext, useContext, useReducer, ReactNode, useEffect, useRef } from 'react';
 import { AppState, CurrentChatSession, ExecutionMode } from '../types';
 import {
   ChatMessage,
   ChatSession,
+  ArtifactTask,
   FileInfo,
   ModifyMode,
   ToolSchema,
@@ -24,10 +25,12 @@ type AppAction =
   | { type: 'CREATE_NEW_CHAT_SESSION'; payload: ChatSession }
   | { type: 'ADD_CHAT_MESSAGE'; payload: ChatMessage }
   | { type: 'UPDATE_FILES'; payload: FileInfo[] }
+  | { type: 'UPDATE_ARTIFACTS'; payload: ArtifactTask[] }
   | { type: 'SET_EXECUTION_MODE'; payload: ExecutionMode }
   | { type: 'SET_MODIFY_MODE'; payload: ModifyMode }
   | { type: 'UPDATE_STREAMING_RESPONSE'; payload: string }
   | { type: 'SET_RESPONDING'; payload: boolean }
+  | { type: 'SET_AGENT_STATUS'; payload: { status: 'idle' | 'waiting_for_reply' | 'in_progress'; progress?: string } }
   | { type: 'SET_PENDING_TOOL_RESPONSE'; payload: string }
   | { type: 'SET_PENDING_WORKFLOW_PLAN'; payload: WorkflowPlan | null }
   | { type: 'SET_LANGUAGE'; payload: 'zh' | 'en' }
@@ -41,12 +44,15 @@ const initialState: AppState = {
   currentChatSession: null,
   chatSessions: [],
   files: [],
+  artifactTasks: [],
   config: null,
   executionMode: 'Local',
   modifyMode: 'individual',
   loading: false,
   error: null,
   responding: false,
+  agentStatus: 'idle',
+  agentProgress: '',
   pendingToolResponse: '',
   pendingWorkflowPlan: null,
   language: 'zh',
@@ -121,6 +127,12 @@ function appReducer(state: AppState, action: AppAction): AppState {
         files: action.payload,
       };
 
+    case 'UPDATE_ARTIFACTS':
+      return {
+        ...state,
+        artifactTasks: action.payload,
+      };
+
     case 'SET_EXECUTION_MODE':
       return { ...state, executionMode: action.payload };
 
@@ -163,6 +175,9 @@ function appReducer(state: AppState, action: AppAction): AppState {
     case 'SET_RESPONDING':
       return { ...state, responding: action.payload };
 
+    case 'SET_AGENT_STATUS':
+      return { ...state, agentStatus: action.payload.status, agentProgress: action.payload.progress || '' };
+
     case 'SET_PENDING_TOOL_RESPONSE':
       return { ...state, pendingToolResponse: action.payload };
 
@@ -190,6 +205,7 @@ interface AppContextActions {
   updateSessionTitle: (chatId: string, title: string) => Promise<void>;
   clearCurrentChatHistory: () => Promise<void>;
   loadFiles: () => Promise<void>;
+  loadArtifacts: () => Promise<void>;
   uploadFiles: (files: File[]) => Promise<void>;
   deleteFile: (filename: string) => Promise<void>;
   getCurrentSchema: () => Promise<ToolSchema | null>;
@@ -211,6 +227,8 @@ const AppContext = createContext<{
 // Provider组件
 export function AppProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(appReducer, initialState);
+  const currentChatIdRef = useRef<string | undefined>(undefined);
+  currentChatIdRef.current = state.currentChatSession?.chat_id;
 
   // 初始化应用
   useEffect(() => {
@@ -311,6 +329,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
               console.warn('自动登录加载文件失败:', err);
             }
 
+            try {
+              const { tasks } = await apiService.getArtifacts(userId);
+              dispatch({ type: 'UPDATE_ARTIFACTS', payload: tasks });
+            } catch (err) {
+              console.warn('自动登录加载 artifact 记录失败:', err);
+            }
+
           } catch (loginError) {
             console.error('自动登录失败:', loginError);
             // 登录失败不清除localStorage，让用户在登录页看到ID并重试
@@ -332,8 +357,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (state.isAuthenticated && state.userId) {
       const handleWSMessage = (message: any) => {
+        if (message.chat_id && message.chat_id !== currentChatIdRef.current) {
+          return;
+        }
         switch (message.type) {
+          case 'agent_status':
+            if (!message.chat_id || message.chat_id === currentChatIdRef.current) {
+              dispatch({ type: 'SET_AGENT_STATUS', payload: { status: message.status || 'idle', progress: message.progress } });
+            }
+            break;
           case 'streaming_response':
+            dispatch({ type: 'SET_AGENT_STATUS', payload: { status: 'in_progress', progress: 'Agent 正在生成回复' } });
             dispatch({ type: 'UPDATE_STREAMING_RESPONSE', payload: message.content || '' });
             break;
           case 'final_response':
@@ -386,12 +420,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
               }
             }
             dispatch({ type: 'SET_RESPONDING', payload: false });
+            dispatch({ type: 'SET_AGENT_STATUS', payload: { status: 'idle' } });
 
             // 任务完成后刷新文件列表，因为Agent可能生成了新文件
             actions.loadFiles();
+            actions.loadArtifacts();
             break;
           case 'error':
             dispatch({ type: 'SET_ERROR', payload: message.message || 'WebSocket错误' });
+            dispatch({ type: 'SET_AGENT_STATUS', payload: { status: 'idle' } });
             break;
           case 'tool_modify_required':
             // 存储当前的响应内容作为待处理的工具响应
@@ -480,6 +517,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }
 
         await actions.loadFiles();
+        await actions.loadArtifacts();
       } catch (error) {
         console.error('登录失败:', error);
         const errorMessage = error instanceof Error ? error.message : '登录失败，请检查网络连接';
@@ -666,6 +704,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
     },
 
+    loadArtifacts: async () => {
+      if (!state.userId) return;
+
+      try {
+        const { tasks } = await apiService.getArtifacts(state.userId);
+        dispatch({ type: 'UPDATE_ARTIFACTS', payload: tasks });
+      } catch (error) {
+        console.error('加载 artifact 记录失败:', error);
+      }
+    },
+
     uploadFiles: async (files: File[]) => {
       if (!state.userId) return;
 
@@ -764,7 +813,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (!state.userId) return;
 
       try {
-        const response = await apiService.decideWorkflowPlan({ session_id: state.userId, decision });
+        const response = await apiService.decideWorkflowPlan({ session_id: state.userId, chat_id: state.currentChatSession?.chat_id, decision });
         if (decision === 'pilot_review') {
           dispatch({ type: 'SET_PENDING_WORKFLOW_PLAN', payload: response.workflow_plan || null });
           message.success('Pilot review completed.');
@@ -839,7 +888,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (!state.userId) return;
 
       try {
-        const response = await apiService.terminateExecution({ session_id: state.userId });
+        const response = await apiService.terminateExecution({ session_id: state.userId, chat_id: state.currentChatSession?.chat_id });
         if (response.status === 'terminating') {
           message.success('正在终止执行...');
           // 清除待处理的工具响应

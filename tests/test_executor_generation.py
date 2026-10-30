@@ -5,11 +5,21 @@
 import sys
 import os
 import inspect
+import asyncio
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from dptb_pilot.server.app import (
+    ExecutionConfigRequest,
+    LoginRequest,
+    active_agents,
     build_execution_config,
+    create_session_agent,
+    get_or_create_chat_agent,
+    chat_agents,
     generate_executor_and_storage,
+    login,
+    session_execution_configs,
+    update_execution_config,
 )
 from dp.agent.server.calculation_mcp_server import init_executor
 from dp.agent.server.storage import BohriumStorage
@@ -52,6 +62,150 @@ def test_build_execution_config_rejects_executor_shorthand():
         assert 'project_id' in str(exc)
     else:
         raise AssertionError('Incomplete Bohrium config should be rejected')
+
+
+def test_create_session_agent_omits_empty_execution_config(monkeypatch):
+    session_id = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef'
+    captured_kwargs = {}
+
+    def capture_agent_kwargs(**kwargs):
+        captured_kwargs.update(kwargs)
+        return kwargs
+
+    monkeypatch.setattr(
+        'dptb_pilot.server.app.create_llm_agent',
+        capture_agent_kwargs,
+    )
+    session_execution_configs.pop(session_id, None)
+
+    create_session_agent(session_id)
+
+    assert 'execution_config' not in captured_kwargs
+
+
+def test_create_session_agent_passes_remote_execution_config(monkeypatch):
+    session_id = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef'
+    execution_config = {'executor': {'type': 'dispatcher'}}
+    captured_kwargs = {}
+
+    def capture_agent_kwargs(**kwargs):
+        captured_kwargs.update(kwargs)
+        return kwargs
+
+    monkeypatch.setattr(
+        'dptb_pilot.server.app.create_llm_agent',
+        capture_agent_kwargs,
+    )
+    session_execution_configs[session_id] = execution_config
+
+    create_session_agent(session_id)
+
+    assert captured_kwargs['execution_config'] is execution_config
+    session_execution_configs.pop(session_id, None)
+
+
+def test_create_chat_agent_uses_real_session_for_workspace_and_config(monkeypatch):
+    session_id = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef'
+    agent_instance_id = f'{session_id}:chat-one'
+    execution_config = {'executor': {'type': 'dispatcher'}}
+    captured_kwargs = {}
+
+    def capture_agent_kwargs(**kwargs):
+        captured_kwargs.update(kwargs)
+        return kwargs
+
+    monkeypatch.setattr(
+        'dptb_pilot.server.app.create_llm_agent',
+        capture_agent_kwargs,
+    )
+    session_execution_configs[session_id] = execution_config
+
+    create_session_agent(agent_instance_id)
+
+    assert captured_kwargs['session_id'] == session_id
+    assert captured_kwargs['agent_instance_id'] == agent_instance_id
+    assert captured_kwargs['execution_config'] is execution_config
+    session_execution_configs.pop(session_id, None)
+
+
+def test_execution_config_is_applied_before_lazy_agent_creation(monkeypatch):
+    session_id = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef'
+    created_configs = []
+
+    def create_agent(current_session_id):
+        created_configs.append(session_execution_configs.get(current_session_id.split(':', 1)[0]))
+        return {
+            'session_id': current_session_id,
+            'generation': len(created_configs),
+        }
+
+    monkeypatch.setattr(
+        'dptb_pilot.server.app.create_session_agent',
+        create_agent,
+    )
+    active_agents.pop(session_id, None)
+    chat_agents.clear()
+    session_execution_configs.pop(session_id, None)
+
+    login_response = asyncio.run(login(LoginRequest(session_id=session_id)))
+    assert session_id not in active_agents
+    response = asyncio.run(update_execution_config(ExecutionConfigRequest(
+        session_id=session_id,
+        execution_mode='Remote',
+        remote_machine={
+            'type': 'Bohrium',
+            'config': {
+                'username': 'user@example.com',
+                'password': 'secret',
+                'project_id': '123',
+            },
+        },
+    )))
+
+    assert login_response['remote_enabled'] is False
+    assert response['remote_enabled'] is True
+    agent = asyncio.run(get_or_create_chat_agent(session_id, 'chat-one'))
+    assert agent['generation'] == 1
+    assert created_configs[0]['executor']['type'] == 'dispatcher'
+    assert session_execution_configs[session_id]['executor']['type'] == 'dispatcher'
+
+    active_agents.pop(session_id, None)
+    session_execution_configs.pop(session_id, None)
+
+
+def test_execution_config_failure_keeps_previous_agent_and_config(monkeypatch):
+    session_id = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef'
+    previous_agent = {'generation': 1}
+    previous_config = {'executor': {'type': 'local'}}
+    active_agents[session_id] = previous_agent
+    session_execution_configs[session_id] = previous_config
+
+    def fail_to_create_agent(_session_id):
+        raise TypeError(
+            "create_llm_agent() got an unexpected keyword argument 'execution_config'"
+        )
+
+    monkeypatch.setattr(
+        'dptb_pilot.server.app.create_session_agent',
+        fail_to_create_agent,
+    )
+
+    try:
+        asyncio.run(update_execution_config(ExecutionConfigRequest(
+            session_id=session_id,
+            execution_mode='Local',
+        )))
+    except Exception as exc:
+        assert getattr(exc, 'status_code', None) == 500
+        assert 'Failed to rebuild Agent' in getattr(exc, 'detail', '')
+    else:
+        raise AssertionError('Agent recreation failure should be returned to the client')
+
+    assert active_agents[session_id] is previous_agent
+    assert session_execution_configs[session_id] is previous_config
+
+    active_agents.pop(session_id, None)
+    session_execution_configs.pop(session_id, None)
 
 
 def test_executor_generation_slurm():

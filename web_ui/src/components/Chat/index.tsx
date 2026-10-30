@@ -763,6 +763,12 @@ function Chat() {
                 />
               )}
               
+              {state.agentStatus !== 'idle' && (
+                <div style={{ color: '#94a3b8', fontSize: '12px', margin: '0 8px 8px', minHeight: '18px' }}>
+                  {state.agentStatus === 'waiting_for_reply' ? 'Agent 正在等待回复' : 'Agent 执行中'}
+                  {state.agentProgress ? ` · ${state.agentProgress}` : ''}
+                </div>
+              )}
               <div style={{
                 backgroundColor: '#1e293b', // slate-800
                 borderRadius: '30px',

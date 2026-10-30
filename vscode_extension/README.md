@@ -35,16 +35,16 @@ npm run package
 The package command generates a file such as:
 
 ```text
-dptb-pilot-vscode-0.1.0.vsix
+dptb-pilot-vscode-0.1.2.vsix
 ```
 
 Install it with either method:
 
-- VS Code UI: open the Extensions view, click `...`, choose `Install from VSIX...`, and select `dptb-pilot-vscode-0.1.0.vsix`.
+- VS Code UI: open the Extensions view, click `...`, choose `Install from VSIX...`, and select `dptb-pilot-vscode-0.1.2.vsix`.
 - Command line:
 
   ```bash
-  code --install-extension dptb-pilot-vscode-0.1.0.vsix --force
+  code --install-extension dptb-pilot-vscode-0.1.2.vsix --force
   ```
 
 After installation, reload VS Code if prompted, then use the command palette:

@@ -4,12 +4,9 @@
 
 import os
 from dptb_pilot.core.photon_service import PhotonChargeConfig
-from dotenv import load_dotenv
-
-load_dotenv()
-
-
-# 从环境变量或配置文件中读取配置
+# The application entry point loads .env before importing this module.
+# Do not search for another .env here: that can silently select a different
+# deployment's configuration when the source and startup directories differ.
 PHOTON_CONFIG = PhotonChargeConfig(
     # 应用的 SKU ID（需要从玻尔平台获取）
     sku_id=int(os.getenv("PHOTON_SKU_ID", "12345")),  # 请替换为实际的 SKU ID

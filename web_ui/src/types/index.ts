@@ -37,6 +37,26 @@ export interface FileInfo {
   updated_at?: number;
 }
 
+export interface ArtifactInfo {
+  id: string;
+  source_path: string;
+  workspace_path?: string | null;
+  file_name?: string | null;
+  size?: number | null;
+  mime_type: string;
+  exists: boolean;
+  preview_kind: 'image' | 'text' | 'binary' | 'unavailable';
+  content_preview?: string | null;
+}
+
+export interface ArtifactTask {
+  id: string;
+  chat_id: string;
+  task: string;
+  completed_at: string;
+  artifacts: ArtifactInfo[];
+}
+
 // 工具参数Schema类型
 export interface ToolSchema {
   name: string;
@@ -90,13 +110,17 @@ export interface WorkflowReview {
 
 // WebSocket消息类型
 export interface WSMessage {
-  type: 'streaming_response' | 'final_response' | 'error' | 'tool_modify_required' | 'workflow_plan_required';
+  type: 'streaming_response' | 'final_response' | 'error' | 'tool_modify_required' | 'workflow_plan_required' | 'agent_status';
   content?: string;
   is_final?: boolean;
   message?: string;
   schema?: ToolSchema;
   tool_name?: string;
   workflow_plan?: WorkflowPlan;
+  chat_id?: string;
+  status?: 'idle' | 'waiting_for_reply' | 'in_progress';
+  progress?: string;
+  remote_tasks?: Array<Record<string, unknown>>;
 }
 
 // 应用配置类型
@@ -178,6 +202,7 @@ export type ModifyMode = 'individual' | 'json';
 // 修改参数请求类型
 export interface ModifyParamsRequest {
   session_id: string;
+  chat_id?: string;
   modified_schema: ToolSchema;
   execution_mode: ExecutionMode;
   selected_machine_id?: string;
@@ -187,16 +212,19 @@ export interface ModifyParamsRequest {
 // 终止执行请求类型
 export interface TerminateExecutionRequest {
   session_id: string;
+  chat_id?: string;
 }
 
 // 终止执行响应类型
 export interface TerminateExecutionResponse {
   message: string;
   status: string;
+  terminated_remote_jobs?: number;
 }
 
 export interface WorkflowPlanDecisionRequest {
   session_id: string;
+  chat_id?: string;
   decision: 'approved' | 'rejected' | 'pilot_review';
 }
 
@@ -208,12 +236,15 @@ export interface AppState {
   currentChatSession: CurrentChatSession | null;
   chatSessions: ChatSession[]; // 当前用户的所有聊天会话
   files: FileInfo[]; // 用户文件列表 (全局)
+  artifactTasks: ArtifactTask[];
   config: AppConfig | null;
   executionMode: ExecutionMode;
   modifyMode: ModifyMode;
   loading: boolean;
   error: string | null;
   responding: boolean; // Agent是否正在响应
+  agentStatus: 'idle' | 'waiting_for_reply' | 'in_progress';
+  agentProgress: string;
   pendingToolResponse: string; // 待处理的工具响应内容
   pendingWorkflowPlan: WorkflowPlan | null;
   language: 'zh' | 'en';

@@ -91,7 +91,6 @@ def generate_deeptb_e3_training_config(
     生成用于 DeePTB-E3 模型训练的配置文件。
 
     参数:
-        config_output_path: 输出的配置 JSON 文件路径。
         material: 原子类型。多原子格式如：['Be','N']
         basis: 原子基组。格式如：{'Si':'2s2p1d'}需要根据训练DFT数据的基组进行设置；如果设为auto则默认使用1s轨道（注：建议手动配置）。
         rmax: 各个原子所使用的截断半径。格式如：{'Si':7.1}应与DFT计算中的截断半径相同；如果设为auto则自动生成（注：建议手动配置）。

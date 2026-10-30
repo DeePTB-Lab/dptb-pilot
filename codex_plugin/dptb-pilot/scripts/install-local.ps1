@@ -1,6 +1,6 @@
 ﻿[CmdletBinding()]
 param(
-    [string]$ServerUrl = "http://localhost:8000",
+    [string]$ServerUrl = "http://localhost:50003",
     [ValidatePattern("^.{32}$")]
     [string]$SessionId,
     [int]$TimeoutMs = 30000,
@@ -85,20 +85,64 @@ if (-not $NoCopy) {
 }
 
 if (-not $SkipConfig) {
-    if (-not $SessionId) {
-        throw "Provide -SessionId with a 32-character DPTB Pilot session id, or pass -SkipConfig and configure it later."
-    }
-
     New-Item -ItemType Directory -Force -Path $configDir | Out-Null
 
-    $config = [ordered]@{
-        server_url = $ServerUrl
+    $existing = $null
+    if (Test-Path -LiteralPath $configPath) {
+        try {
+            $existing = Get-Content -Raw -LiteralPath $configPath | ConvertFrom-Json
+        }
+        catch {
+            Write-Warning "Existing config could not be parsed and will be replaced with v2 settings."
+        }
+    }
+
+    if (-not $SessionId) {
+        if ($existing -and $existing.version -eq 2 -and $existing.connections -and $existing.connections.default) {
+            $SessionId = $existing.connections.default.session_id
+        }
+        elseif ($existing -and $existing.session_id) {
+            $SessionId = $existing.session_id
+        }
+        else {
+            $SessionId = [guid]::NewGuid().ToString("N")
+        }
+    }
+
+    if ($SessionId.Length -ne 32) {
+        throw "DPTB Pilot session id must be exactly 32 characters."
+    }
+
+    $connections = [ordered]@{}
+    if ($existing -and $existing.version -eq 2 -and $existing.connections) {
+        foreach ($property in $existing.connections.PSObject.Properties) {
+            $connections[$property.Name] = $property.Value
+        }
+    }
+    $connections["default"] = [ordered]@{
+        server_url = $ServerUrl.TrimEnd("/")
         session_id = $SessionId
         timeout_ms = $TimeoutMs
     }
 
+    $config = [ordered]@{
+        version = 2
+        active_connection = if ($existing -and $existing.version -eq 2 -and $existing.active_connection) { $existing.active_connection } else { "default" }
+        connections = $connections
+        active_chat = if ($existing -and $existing.version -eq 2) { $existing.active_chat } else { $null }
+        workflow_mode = if ($existing -and $existing.workflow_mode) { $existing.workflow_mode } else { "auto" }
+        strict_scientific_routing = $true
+        execution = if ($existing -and $existing.version -eq 2 -and $existing.execution) { $existing.execution } else { [ordered]@{ mode = "Local"; profile_id = $null; parallel_mode = "auto"; max_parallelism = 4 } }
+        execution_profiles = if ($existing -and $existing.version -eq 2 -and $existing.execution_profiles) { $existing.execution_profiles } else { [ordered]@{} }
+        download_directory = if ($existing -and $existing.download_directory) { $existing.download_directory } else { ".dptb-pilot-downloads" }
+        matterviz_uri = if ($existing -and $existing.matterviz_uri) { $existing.matterviz_uri } else { "matterviz://open?path={path}" }
+    }
+
     if ($PythonPath) {
         $config.python_path = (Resolve-Path -LiteralPath $PythonPath).Path
+    }
+    elseif ($existing -and $existing.python_path) {
+        $config.python_path = $existing.python_path
     }
 
     Write-JsonFile -Path $configPath -Object $config

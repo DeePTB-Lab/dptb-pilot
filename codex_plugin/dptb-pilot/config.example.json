@@ -1,6 +1,24 @@
 {
-  "server_url": "http://localhost:8000",
-  "session_id": "0123456789abcdef0123456789abcdef",
-  "timeout_ms": 30000,
-  "python_path": "C:/Users/lonya/PycharmProjects/dptb-pilot/.venv/Scripts/python.exe"
+  "version": 2,
+  "active_connection": "default",
+  "connections": {
+    "default": {
+      "server_url": "http://localhost:50003",
+      "session_id": "0123456789abcdef0123456789abcdef",
+      "timeout_ms": 30000
+    }
+  },
+  "active_chat": null,
+  "workflow_mode": "auto",
+  "strict_scientific_routing": true,
+  "execution": {
+    "mode": "Local",
+    "profile_id": null,
+    "parallel_mode": "auto",
+    "max_parallelism": 4
+  },
+  "execution_profiles": {},
+  "download_directory": ".dptb-pilot-downloads",
+  "matterviz_uri": "matterviz://open?path={path}",
+  "python_path": "C:/path/to/dptb-pilot/.venv/Scripts/python.exe"
 }

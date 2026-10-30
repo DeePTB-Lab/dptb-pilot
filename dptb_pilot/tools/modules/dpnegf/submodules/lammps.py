@@ -33,11 +33,17 @@ def _group_fixed_by_ids(fixed_ids: List[int]) -> str:
     if not fixed_ids:
         return "# no fixed atoms"
     ids = [str(i) for i in sorted(set(fixed_ids))]
-    return "\n".join([
-        f"group fixed id {' '.join(ids)}",
+    lines = ["group fixed empty"]
+    lines.extend(
+        f"group fixed id {' '.join(ids[start:start + 64])}"
+        for start in range(0, len(ids), 64)
+    )
+    lines.extend([
         "group mobile subtract all fixed",
-        "fix freeze fixed spring/self 1e8",
+        "velocity fixed set 0.0 0.0 0.0",
+        "fix freeze fixed setforce 0.0 0.0 0.0",
     ])
+    return "\n".join(lines)
 
 
 def _ensemble_block(

@@ -28,7 +28,7 @@ def _dos_predict(
         pdos: bool = False,
         is_gamma_center: bool = True,
         override_overlap: Path = None,
-        efermi: float = None,
+        fermi_level: float = None,
         fermi_kmesh: Union[str, list, tuple] = None,
         fermi_smearing_method: str = "FD",
         work_path: str = ".",
@@ -46,7 +46,7 @@ def _dos_predict(
     structure_file_path : Path
         输入结构文件路径，通常为 VASP/POSCAR 格式。
     nel_atom : dict, optional
-        元素价电子数字典，例如 ``{"Si": 4}``。当未显式提供 ``efermi`` 时用于计算费米能级。
+        元素价电子数字典，例如 ``{"Si": 4}``。当未显式提供 ``fermi_level`` 时用于计算费米能级。
     kmesh : str or list, optional
         DOS 计算使用的 k 点网格，例如 ``"[5,5,5]"``。默认 ``[5, 5, 5]``。
     erange : str or list, optional
@@ -63,7 +63,7 @@ def _dos_predict(
         是否使用 Gamma-centered k 点网格。
     override_overlap : Path, optional
         用于覆盖模型 overlap 的文件。
-    efermi : float, optional
+    fermi_level : float, optional
         外部指定费米能级；提供后不会自动计算。
     fermi_kmesh : str or list, optional
         自动计算费米能级时使用的 k 点网格，默认与 ``kmesh`` 相同。
@@ -109,17 +109,17 @@ def _dos_predict(
         override_overlap=str(override_overlap) if override_overlap else None,
     )
 
-    if efermi is not None:
-        tbsystem.set_efermi(efermi)
+    if fermi_level is not None:
+        tbsystem.set_efermi(fermi_level)
     elif nel_atom is not None:
         tbsystem.set_electrons(nel_atom=nel_atom)
-        efermi = tbsystem.get_efermi(
+        fermi_level = tbsystem.get_efermi(
             kmesh=fermi_kmesh,
             is_gamma_center=is_gamma_center,
             smearing_method=fermi_smearing_method,
         )
     else:
-        efermi = 0.0
+        fermi_level = 0.0
 
     dos_accessor = tbsystem.get_dos(
         kmesh=kmesh,
@@ -145,9 +145,9 @@ def _dos_predict(
     )
 
     return {
-        "dos_file_path": str(dos_data_path),
-        "image_file_path": str(dos_image_path),
-        "fermi_level": float(efermi),
+        "dos_file_path": dos_data_path,
+        "image_file_path": dos_image_path,
+        "fermi_level": float(fermi_level),
     }
 
 
@@ -157,7 +157,7 @@ def _dos_plot(
         e_max: float = None,
         dos_min: float = None,
         dos_max: float = None,
-        match_efermi: bool = True,
+        match_fermi_level: bool = True,
         plot_pdos: bool = False,
         selected_orbitals: Union[str, list] = None,
         work_path: str = ".",
@@ -170,10 +170,10 @@ def _dos_plot(
     dos_file_path : Path
         ``dos_predict`` 生成的 DOS ``.npz`` 文件，需包含 ``energy`` 和 ``dos``。
     e_min, e_max : float, optional
-        横轴能量范围。默认使用文件中的能量范围；``match_efermi=True`` 时为相对费米能级。
+        横轴能量范围。默认使用文件中的能量范围；``match_fermi_level=True`` 时为相对费米能级。
     dos_min, dos_max : float, optional
         纵轴 DOS 范围。
-    match_efermi : bool, optional
+    match_fermi_level : bool, optional
         是否将能量减去文件中的 ``fermi_level``，默认画 ``E - E_F``。
     plot_pdos : bool, optional
         文件包含 ``pdos`` 时是否同时绘制 PDOS。
@@ -201,9 +201,9 @@ def _dos_plot(
 
     energy = data["energy"]
     dos = data["dos"]
-    efermi = float(np.squeeze(data["fermi_level"])) if "fermi_level" in data else 0.0
+    fermi_level = float(np.squeeze(data["fermi_level"])) if "fermi_level" in data else 0.0
 
-    x_energy = energy - efermi if match_efermi else energy
+    x_energy = energy - fermi_level if match_fermi_level else energy
     selected_orbitals = _parse_sequence(selected_orbitals, selected_orbitals)
 
     plt.figure(figsize=(6, 5))
@@ -231,11 +231,11 @@ def _dos_plot(
 
         plt.legend(fontsize=8)
 
-    if match_efermi:
+    if match_fermi_level:
         plt.axvline(0, linestyle="--", linewidth=1)
         plt.xlabel("Energy - $E_F$ (eV)")
     else:
-        plt.axvline(efermi, linestyle="--", linewidth=1)
+        plt.axvline(fermi_level, linestyle="--", linewidth=1)
         plt.xlabel("Energy (eV)")
 
     if e_min is None:
@@ -261,4 +261,4 @@ def _dos_plot(
     plt.savefig(dos_img_path, dpi=300)
     plt.close()
 
-    return {"dos_plot_path": str(dos_img_path)}
+    return {"dos_plot_path": dos_img_path}

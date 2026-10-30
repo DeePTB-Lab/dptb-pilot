@@ -5,14 +5,14 @@ import subprocess
 import subprocess as sp
 import tempfile
 from pathlib import Path
-from typing import Dict
+from typing import Any, Dict, Literal, Mapping, Optional, Tuple
 
 import numpy as np
 from dptb.postprocess.unified import TBSystem
 
 from matplotlib import image as mpimg, pyplot as plt
 
-from dptb_pilot.tools.modules.abacus.core import _abacus_get_efermi
+from dptb_pilot.tools.modules.abacus.core import _abacus_get_fermi_level
 from dptb_pilot.tools.modules.util.comm import generate_work_path, temporary_chdir
 from dptb_pilot.tools.modules.util.get_dptb_path import get_dptb_path
 
@@ -138,7 +138,7 @@ import numpy as np
 import numpy as np
 
 
-def smart_band_gap(eig, efermi, atol=1e-3, max_diff=1.0):
+def smart_band_gap(eig, fermi_level, atol=1e-3, max_diff=1.0):
     """
     根据能带覆盖区间自动寻找距离费米能级最近的带隙。
     自适应处理不同 k 点能带序号错位/乱序的情况，并具备高级安全警报机制。
@@ -147,7 +147,7 @@ def smart_band_gap(eig, efermi, atol=1e-3, max_diff=1.0):
     ----------
     eig : array_like
         能带数据，shape=(Nk, Nband)
-    efermi : float
+    fermi_level : float
         费米能级
     atol : float
         判断区间是否连续的容差（单位 eV），即判定为带隙的最小宽度
@@ -182,7 +182,7 @@ def smart_band_gap(eig, efermi, atol=1e-3, max_diff=1.0):
 
     # 如果没有任何间隙，使用更细的带隙搜索方式
     if len(gap_indices) == 0:
-        return narrow_band_gap(eig, efermi)
+        return narrow_band_gap(eig, fermi_level)
 
     all_gaps = []
     biggest_gap = None
@@ -191,16 +191,16 @@ def smart_band_gap(eig, efermi, atol=1e-3, max_diff=1.0):
     # 4. 收集所有带隙，并定位距离费米能级最近的带隙
     for idx in gap_indices:
         lower = float(flat_energies[idx])
-        if lower > efermi + max_diff:
+        if lower > fermi_level + max_diff:
             continue
         upper = float(flat_energies[idx + 1])
-        if upper < efermi - max_diff:
+        if upper < fermi_level - max_diff:
             continue
         all_gaps.append((lower, upper))
 
         # # 以带隙中心到费米能级的距离作为“最近”的判定依据
         # gap_center = (lower + upper) / 2.0
-        # dist_to_center = abs(gap_center - efermi)
+        # dist_to_center = abs(gap_center - fermi_level)
         #
         # if dist_to_center < min_dist_to_center:
         #     min_dist_to_center = dist_to_center
@@ -214,18 +214,18 @@ def smart_band_gap(eig, efermi, atol=1e-3, max_diff=1.0):
 
     # 提取目标带隙的核心参数
     if biggest_gap is None:
-        return narrow_band_gap(eig, efermi)
+        return narrow_band_gap(eig, fermi_level)
 
     gap_lower, gap_upper = biggest_gap
     gap_width = gap_upper - gap_lower
     gap_center = (gap_lower + gap_upper) / 2.0
 
     # 计算费米能级到带隙的物理距离以及是否在带隙内部
-    if gap_lower <= efermi <= gap_upper:
+    if gap_lower <= fermi_level <= gap_upper:
         distance_to_fermi = 0.0
         fermi_inside_gap = True
     else:
-        distance_to_fermi = float(min(abs(gap_lower - efermi), abs(gap_upper - efermi)))
+        distance_to_fermi = float(min(abs(gap_lower - fermi_level), abs(gap_upper - fermi_level)))
         fermi_inside_gap = False
 
     # 5. 升级版风险检查与单次最危险警报机制
@@ -233,8 +233,8 @@ def smart_band_gap(eig, efermi, atol=1e-3, max_diff=1.0):
     dangerous_gaps = []
 
     for g_lower, g_upper in all_gaps:
-        # 条件 A: 判断该带隙是否在 efermi ± max_diff eV 的窗口外面
-        outside_window = (g_upper < efermi - max_diff) or (g_lower > efermi + max_diff)
+        # 条件 A: 判断该带隙是否在 fermi_level ± max_diff eV 的窗口外面
+        outside_window = (g_upper < fermi_level - max_diff) or (g_lower > fermi_level + max_diff)
         if not outside_window:
             continue
 
@@ -247,7 +247,7 @@ def smart_band_gap(eig, efermi, atol=1e-3, max_diff=1.0):
         g_width = g_upper - g_lower
         if g_width > gap_width:
             # 计算该危险带隙到费米能级的距离
-            g_dist = float(min(abs(g_lower - efermi), abs(g_upper - efermi)))
+            g_dist = float(min(abs(g_lower - fermi_level), abs(g_upper - fermi_level)))
             dangerous_gaps.append({
                 "lower": g_lower,
                 "upper": g_upper,
@@ -277,7 +277,7 @@ def smart_band_gap(eig, efermi, atol=1e-3, max_diff=1.0):
         "risky": risky
     }
 
-def narrow_band_gap(eig, efermi):
+def narrow_band_gap(eig, fermi_level):
     """
     自适应能带结构计算函数。
     1. 优先尝试全局排序法寻找标准半导体大带隙。
@@ -287,7 +287,7 @@ def narrow_band_gap(eig, efermi):
     ----------
     eig : array_like
         能带数据，shape=(Nk, Nband)
-    efermi : float
+    fermi_level : float
         费米能级
     atol : float
         判定为标准半导体大带隙的容差（单位 eV）
@@ -314,18 +314,33 @@ def narrow_band_gap(eig, efermi):
     k_energies = np.sort(eigenvalues[k_start])
 
     # 找到插入位置
-    idx = np.searchsorted(k_energies, efermi)
+    idx = np.searchsorted(k_energies, fermi_level)
 
-    # 左边最近三个（从近到远）
-    left = k_energies[max(0, idx - 3):idx]
+    if idx == 0 or idx == Nband:
+        return {
+            "type": "insufficient_fermi_bracketing",
+            "is_valid": False,
+            "gap_lower": None,
+            "gap_upper": None,
+            "gap_width": 0.0,
+            "diagnostic_message": (
+                "The reference Fermi level is outside the eigenvalue range at "
+                "the final k-point; a local gap cannot be tracked reliably."
+            ),
+        }
 
-    # 右边最近三个
-    right = k_energies[idx:min(len(k_energies), idx + 3)]
-
-    # 按要求返回：小的三个 + 大的三个
-    ab_list = np.concatenate((left, right))
-
-    checking_list = [[2, 3], [1, 2], [3, 4], [0, 1], [4, 5]]
+    # Try the pair bracketing Ef first, then adjacent pairs on either side.
+    checking_list = [
+        (idx - 1, idx),
+        (idx - 2, idx - 1),
+        (idx, idx + 1),
+        (idx - 3, idx - 2),
+        (idx + 1, idx + 2),
+    ]
+    checking_list = [
+        pair for pair in checking_list
+        if 0 <= pair[0] < Nband and 0 <= pair[1] < Nband
+    ]
 
     for checking in checking_list:
         # =========================================================================
@@ -333,8 +348,8 @@ def narrow_band_gap(eig, efermi):
         # =========================================================================
 
         # 初始化：a 为 0 以上的最小值（导带底），b 为 0 以下的最大值（价带顶）
-        a = ab_list[checking[1]]
-        b = ab_list[checking[0]]
+        a = k_energies[checking[1]]
+        b = k_energies[checking[0]]
 
         final_k = k_start
         final_a = a
@@ -424,41 +439,6 @@ def narrow_band_gap(eig, efermi):
         if is_valid:
             break
 
-    # =========================================================================
-    # 步骤 4：数据可视化绘制（无论成功与否，强制执行）
-    # =========================================================================
-    plt.figure(figsize=(8, 6), dpi=150)
-
-    # 1. 用红色散点图绘制全能带
-    for k in range(Nk):
-        x_vals = np.full(Nband, k)
-        plt.scatter(x_vals, eigenvalues[k], color="red", s=6, zorder=3)
-
-    # 2. 绘制黄色长方体：纵向为 k±2 包络出的外部动态能量展宽 [E_min, E_max]
-    plt.axhspan(E_min, E_max, xmin=0, xmax=1,
-                color="yellow", alpha=0.3, label="Energy Window (k±2)", zorder=1)
-
-    # 3. 绘制绿色长方体：纵向为核心锁定的最终本地带隙 [g_lower, g_upper]
-    plt.axhspan(g_lower, g_upper, xmin=0, xmax=1,
-                color="green", alpha=0.5, label="Target Local Gap", zorder=2)
-
-    # 4. 图面基础美化与输出
-    plt.axhline(efermi, color="black", linestyle="--", linewidth=1, label="Fermi Level")
-    plt.xlim(0, Nk - 1)
-    plt.xlabel("k-point Index")
-    plt.ylabel("Energy (eV)")
-
-    # 在标题中动态加入状态后缀，一眼识别图像是否有效
-    status_suffix = "VERIFIED" if is_valid else "POLLUTED"
-    plt.title(f"Band Structure  ({status_suffix})")
-
-    plt.legend(loc="upper right")
-    plt.tight_layout()
-    plt.show()
-
-    # =========================================================================
-    # 步骤 5：最终根据验证状态返回不同的字典类型，方便上层业务判断
-    # =========================================================================
     return {
         "type": "backtracked_metallic" if is_valid else "polluted_metallic",
         "is_valid": is_valid,
@@ -470,89 +450,326 @@ def narrow_band_gap(eig, efermi):
         "energy_window_max": float(E_max)
     }
 
+def _load_band_gap_input(band_structure_file_path: Path) -> Tuple[Dict[str, Any], np.ndarray]:
+    """Load supported band files and normalize eigenvalues to ``(Nk, Nband)``."""
+    path = Path(band_structure_file_path).expanduser()
+    if not path.is_file():
+        raise FileNotFoundError(f"Band-structure file not found: {path}")
+
+    data_raw = np.load(path, allow_pickle=True)
+    if isinstance(data_raw, np.lib.npyio.NpzFile):
+        try:
+            data = {key: data_raw[key] for key in data_raw.files}
+        finally:
+            data_raw.close()
+    elif isinstance(data_raw, np.ndarray) and data_raw.dtype == object:
+        if data_raw.size != 1:
+            raise ValueError(
+                "Object-array .npy input must contain exactly one band-data mapping"
+            )
+        loaded = data_raw.reshape(()).item()
+        if not isinstance(loaded, Mapping):
+            raise TypeError("Object-array .npy input must contain a mapping")
+        data = dict(loaded)
+    elif isinstance(data_raw, np.ndarray):
+        data = {"eigenvalues": data_raw}
+    else:
+        raise TypeError(f"Unsupported band-structure payload: {type(data_raw).__name__}")
+
+    if "eigenvalues" not in data:
+        raise KeyError("Band-structure data does not contain 'eigenvalues'")
+
+    try:
+        eigenvalues = np.asarray(data["eigenvalues"], dtype=float)
+    except (TypeError, ValueError) as exc:
+        raise TypeError("'eigenvalues' must be a numeric array") from exc
+
+    if eigenvalues.ndim == 1:
+        eigenvalues = eigenvalues.reshape(1, -1)
+    elif eigenvalues.ndim == 3 and eigenvalues.shape[0] == 1:
+        eigenvalues = eigenvalues[0]
+
+    if eigenvalues.ndim != 2:
+        raise ValueError(
+            "'eigenvalues' must have shape (Nk, Nband), (Nband,), or "
+            f"(1, Nk, Nband); received {eigenvalues.shape}"
+        )
+    if 0 in eigenvalues.shape:
+        raise ValueError("'eigenvalues' must not be empty")
+
+    if "xlist" in data:
+        xlist_size = np.asarray(data["xlist"]).size
+        if eigenvalues.shape[0] == xlist_size:
+            pass
+        elif eigenvalues.shape[1] == xlist_size:
+            eigenvalues = eigenvalues.T
+        else:
+            raise ValueError(
+                "'xlist' length does not match either eigenvalue dimension: "
+                f"xlist={xlist_size}, eigenvalues={eigenvalues.shape}"
+            )
+
+    if not np.all(np.isfinite(eigenvalues)):
+        raise ValueError("'eigenvalues' contains NaN or infinite values")
+
+    return data, eigenvalues
+
+
+def _as_finite_scalar(value: Any, name: str) -> float:
+    """Convert a Python or NumPy scalar to a finite float."""
+    array = np.asarray(value)
+    if array.size != 1:
+        raise ValueError(f"{name} must be a scalar; received shape {array.shape}")
+    try:
+        scalar = float(array.reshape(()).item())
+    except (TypeError, ValueError) as exc:
+        raise TypeError(f"{name} must be numeric") from exc
+    if not np.isfinite(scalar):
+        raise ValueError(f"{name} must be finite")
+    return scalar
+
+
+def _energy_indices(eigenvalues: np.ndarray, energy: Optional[float]):
+    if energy is None:
+        return None, None
+    flat_index = int(np.argmin(np.abs(eigenvalues - energy)))
+    kpoint_index, band_index = np.unravel_index(flat_index, eigenvalues.shape)
+    return int(kpoint_index), int(band_index)
+
+
+def _normalize_gap_candidates(all_gaps) -> list[Dict[str, float]]:
+    candidates = []
+    for gap in all_gaps or []:
+        if isinstance(gap, Mapping):
+            lower = float(gap["lower"])
+            upper = float(gap["upper"])
+        else:
+            lower, upper = map(float, gap)
+        candidates.append({
+            "lower": lower,
+            "upper": upper,
+            "width": max(0.0, upper - lower),
+        })
+    return candidates
+
+
+def _unified_band_gap_result(
+    *,
+    eigenvalues: np.ndarray,
+    fermi_level: float,
+    fermi_level_source: str,
+    calculation_method: str,
+    gap_lower: Optional[float],
+    gap_upper: Optional[float],
+    all_gaps=None,
+    risky: bool = False,
+    is_valid: bool = True,
+    status: str = "ok",
+    diagnostic_message: Optional[str] = None,
+    smart_result: Optional[Mapping[str, Any]] = None,
+):
+    """Build the stable public result shape shared by all calculation paths."""
+    lower = None if gap_lower is None else float(gap_lower)
+    upper = None if gap_upper is None else float(gap_upper)
+    gap = 0.0 if lower is None or upper is None else max(0.0, upper - lower)
+    center = None if lower is None or upper is None else (lower + upper) / 2.0
+    inside = None if center is None else lower <= fermi_level <= upper
+    distance = None
+    if center is not None:
+        distance = 0.0 if inside else min(abs(lower - fermi_level), abs(upper - fermi_level))
+
+    vbm_kpoint_index, vbm_band_index = _energy_indices(eigenvalues, lower)
+    cbm_kpoint_index, cbm_band_index = _energy_indices(eigenvalues, upper)
+    smart_result = smart_result or {}
+
+    return {
+        "band_gap": float(gap),
+        "vbm": lower,
+        "cbm": upper,
+        "vbm_band_index": vbm_band_index,
+        "cbm_band_index": cbm_band_index,
+        "vbm_kpoint_index": vbm_kpoint_index,
+        "cbm_kpoint_index": cbm_kpoint_index,
+        "gap_lower": lower,
+        "gap_upper": upper,
+        "gap_width": float(gap),
+        "gap_center": center,
+        "fermi_level": float(fermi_level),
+        "fermi_level_source": fermi_level_source,
+        "calculation_method": calculation_method,
+        "distance_to_fermi": distance,
+        "fermi_inside_gap": inside,
+        "all_gaps": _normalize_gap_candidates(all_gaps),
+        "risky": bool(risky),
+        "is_valid": bool(is_valid),
+        "status": status,
+        "diagnostic_message": diagnostic_message,
+        "k_target": smart_result.get("k_target"),
+        "energy_window_min": smart_result.get("energy_window_min"),
+        "energy_window_max": smart_result.get("energy_window_max"),
+    }
+
+
 def _band_gap(band_structure_file_path: Path,
-              fermi_level = None,
-              n_atoms = None,
-              pseudo_fermi_level: bool = False,
-              smart_band_gap_atol: float = None):
+              fermi_level: Optional[float] = None,
+              n_atoms: Optional[int] = None,
+              pseudo_fermi_level: Optional[float] = None,
+              calculation_method: Literal["auto", "fermi", "smart"] = "auto",
+              smart_band_gap_atol: Optional[float] = None,
+              smart_band_gap_max_diff: float = 1.0):
     """
-    Calculate the band gap from a DeePTB band-structure ``.npz`` or ``.npy`` file.
+    Calculate a band gap from a normalized DeePTB band-structure input.
 
     Parameters
     ----------
     band_structure_file_path : Path
-        Path to a saved band-structure file containing an ``eigenvalues`` array.
+        Path to ``.npz`` data, a ``.npy`` mapping, or a numeric ``.npy`` array.
+        The mapping form must contain ``eigenvalues`` and may contain
+        ``fermi_level`` or ``E_fermi``. Pickled object-array files must only come
+        from trusted sources.
     fermi_level : float, optional
         Explicit Fermi level used to split occupied and unoccupied states.
     n_atoms : int, optional
-        Number of atoms used by the fallback electron-count Fermi-level estimate.
+        Number of atoms used only when neither an argument nor the file supplies
+        a Fermi level.
     pseudo_fermi_level : float, optional
-        Approximate Fermi level for the band-center based gap estimator. Mutually
-        exclusive with ``fermi_level``.
+        Approximate reference energy. In ``auto`` mode, providing this value
+        selects the smart/local-gap algorithm. Mutually exclusive with
+        ``fermi_level``. Zero is a valid value.
+    calculation_method : {"auto", "fermi", "smart"}, optional
+        ``fermi`` splits all states at the reference energy. ``smart`` searches
+        for a gap near it. ``auto`` preserves the legacy convention: use
+        ``smart`` only when ``pseudo_fermi_level`` is explicitly provided.
+    smart_band_gap_atol : float, optional
+        Minimum resolved gap for smart search, in eV. Defaults to ``1e-3``.
+    smart_band_gap_max_diff : float, optional
+        Search radius around the reference energy, in eV. Defaults to ``1.0``.
 
     Returns
     -------
     dict
-        Band-gap dictionary. With pseudo Fermi input it may also include VBM/CBM
-        values and band indices.
+        A stable dictionary for every calculation path. ``band_gap`` and
+        ``gap_width`` are identical; ``vbm``/``cbm`` are identical to
+        ``gap_lower``/``gap_upper`` and use the input energy reference. Missing
+        edges and indices are returned as ``None`` rather than omitted. The
+        result also reports the Fermi-level source, selected method, validity,
+        status, and smart-search diagnostics.
+
+    Raises
+    ------
+    FileNotFoundError
+        If the input path does not exist.
+    TypeError, ValueError, KeyError
+        If the payload, eigenvalue shape, scalar parameters, or method is invalid.
     """
+    if calculation_method not in {"auto", "fermi", "smart"}:
+        raise ValueError("calculation_method must be 'auto', 'fermi', or 'smart'")
+    if fermi_level is not None and pseudo_fermi_level is not None:
+        raise ValueError("fermi_level and pseudo_fermi_level are mutually exclusive")
+    if calculation_method == "fermi" and pseudo_fermi_level is not None:
+        raise ValueError("pseudo_fermi_level cannot be used with calculation_method='fermi'")
+    if n_atoms is not None and (
+        isinstance(n_atoms, bool)
+        or not isinstance(n_atoms, (int, np.integer))
+        or n_atoms <= 0
+    ):
+        raise ValueError("n_atoms must be a positive integer")
 
-    data_raw = np.load(band_structure_file_path, allow_pickle=True)
+    data, eig = _load_band_gap_input(band_structure_file_path)
+    use_smart_band_gap = (
+        calculation_method == "smart"
+        or calculation_method == "auto" and pseudo_fermi_level is not None
+    )
 
-    # ---------- 1. 统一数据结构 ----------
-    if isinstance(data_raw, np.lib.npyio.NpzFile):
-        # npz → 类 dict
-        data = {k: data_raw[k] for k in data_raw.files}
-    elif isinstance(data_raw, np.ndarray) and data_raw.dtype == object:
-        # npy → array(dict, dtype=object)
-        data = data_raw.item()
-    elif isinstance(data_raw, dict):
-        data = data_raw
+    if pseudo_fermi_level is not None:
+        reference_fermi_level = pseudo_fermi_level
+        fermi_level_source = "argument:pseudo_fermi_level"
+    elif fermi_level is not None:
+        reference_fermi_level = fermi_level
+        fermi_level_source = "argument:fermi_level"
+    elif data.get("fermi_level") is not None:
+        reference_fermi_level = data["fermi_level"]
+        fermi_level_source = "file:fermi_level"
+    elif data.get("E_fermi") is not None:
+        reference_fermi_level = data["E_fermi"]
+        fermi_level_source = "file:E_fermi"
     else:
-        raise TypeError(f"不支持的数据格式: {type(data_raw)}")
-
-    # ---------- 2. 读取 eigenvalues ----------
-    if "eigenvalues" not in data:
-        raise KeyError("未找到 eigenvalues")
-    eig = data["eigenvalues"]
-
-    # ---------- 3. 处理费米能级 ----------
-    if fermi_level is None:
-        # npz: fermi_level
-        # npy: E_fermi
-        fermi_level = data.get("fermi_level", None)
-
-    if fermi_level is None:
-        fermi_level = data.get("E_fermi", None)
-
-    # 防止 np.array(0) 这种情况
-    if isinstance(fermi_level, np.ndarray):
-        fermi_level = float(fermi_level)
-
-    if fermi_level is None:
         if n_atoms is None:
-            raise ValueError("必须提供 n_atoms 才能自动计算费米能级")
-        print("自动查找费米能级——")
-        fermi_level = find_fermi_level(eig, n_atoms)
-        print(f"费米能级为：{fermi_level}")
+            raise ValueError(
+                "No Fermi level was provided; pass fermi_level, "
+                "pseudo_fermi_level, or n_atoms, or include fermi_level/E_fermi "
+                "in the band file"
+            )
+        reference_fermi_level = find_fermi_level(eig, n_atoms)
+        fermi_level_source = "estimated:n_atoms"
 
-    # ---------- 4. 展平能带 ----------
-    if not pseudo_fermi_level:
+    reference_fermi_level = _as_finite_scalar(reference_fermi_level, "fermi_level")
+
+    if not use_smart_band_gap:
         energies = eig.ravel()
+        valence_mask = energies <= reference_fermi_level
+        conduction_mask = energies > reference_fermi_level
+        if not np.any(valence_mask) or not np.any(conduction_mask):
+            return _unified_band_gap_result(
+                eigenvalues=eig,
+                fermi_level=reference_fermi_level,
+                fermi_level_source=fermi_level_source,
+                calculation_method="fermi",
+                gap_lower=None,
+                gap_upper=None,
+                risky=True,
+                is_valid=False,
+                status="fermi_level_outside_spectrum",
+                diagnostic_message=(
+                    "The reference Fermi level does not split the supplied "
+                    "eigenvalues into occupied and unoccupied states."
+                ),
+            )
 
-        valence = energies[energies <= fermi_level]
-        conduction = energies[energies > fermi_level]
+        vbm = float(np.max(energies[valence_mask]))
+        cbm = float(np.min(energies[conduction_mask]))
+        return _unified_band_gap_result(
+            eigenvalues=eig,
+            fermi_level=reference_fermi_level,
+            fermi_level_source=fermi_level_source,
+            calculation_method="fermi",
+            gap_lower=vbm,
+            gap_upper=cbm,
+        )
 
-        if valence.size == 0 or conduction.size == 0:
-            return {"band_gap": 0.0}
+    atol = 1e-3 if smart_band_gap_atol is None else _as_finite_scalar(
+        smart_band_gap_atol, "smart_band_gap_atol"
+    )
+    max_diff = _as_finite_scalar(smart_band_gap_max_diff, "smart_band_gap_max_diff")
+    if atol < 0 or max_diff < 0:
+        raise ValueError("smart-band-gap tolerances must be non-negative")
 
-        vbm = valence.max()
-        cbm = conduction.min()
+    smart_result = smart_band_gap(
+        eig,
+        reference_fermi_level,
+        atol=atol,
+        max_diff=max_diff,
+    )
+    if smart_result is None:
+        smart_result = {}
+    gap_lower = smart_result.get("gap_lower")
+    gap_upper = smart_result.get("gap_upper")
+    is_valid = bool(smart_result.get("is_valid", gap_lower is not None and gap_upper is not None))
+    return _unified_band_gap_result(
+        eigenvalues=eig,
+        fermi_level=reference_fermi_level,
+        fermi_level_source=fermi_level_source,
+        calculation_method="smart",
+        gap_lower=gap_lower,
+        gap_upper=gap_upper,
+        all_gaps=smart_result.get("all_gaps"),
+        risky=bool(smart_result.get("risky", not is_valid)),
+        is_valid=is_valid,
+        status="ok" if is_valid else smart_result.get("type", "gap_not_found"),
+        diagnostic_message=smart_result.get("diagnostic_message"),
+        smart_result=smart_result,
+    )
 
-        return {"band_gap": cbm - vbm}
-    else:
-        # 智能获取能带
-        return smart_band_gap(eig, fermi_level, smart_band_gap_atol)
 
 def _band_predict(
         model_file_path: Path,
@@ -568,13 +785,20 @@ def _band_predict(
     """
     使用输入的模型预测结构能带。
 
+    方法选择建议:
+        这是普通（非 Julia）能带计算方法。对于结构较小，或费米能级不够准确的情况，
+        优先使用本方法，结果更稳妥。只有在确实需要处理大结构时，才考虑
+        ``band_predict_with_julia``；Julia 方法虽然速度更快，但只能得到局域能带。
+
     参数:
-        model_file_name: 使用的model路径。
-        structure_file_name: 输入的结构文件路径。结构文件应为vasp的格式
+        model_file_path: 使用的 model 路径。
+        structure_file_path: 输入的结构文件路径。结构文件应为 VASP 格式。
         kpath: K-Path，格式如"[[0.0,0.0,0.0,50,G],[0.5,0.0,0.5,1,X]]"
         nel_atom: Dictionary mapping element symbols to number of valence electrons. Example: {'Si': 4, 'H': 1}
         kmesh: 用于计算费米能级的k点网格，默认为[5,5,5]，格式如"[5,5,5]"
         override_overlap: 覆盖的overlap文件，使用后覆盖模型产生的overlap
+        smearing_method: 计算费米能级时使用的展宽方法，默认 ``FD``。
+        sigma_val: 计算费米能级时使用的展宽宽度；默认使用 DeePTB 配置。
         work_path: 能带信息的保存路径。注意应该是文件夹而不是文件。
 
     返回:
@@ -590,6 +814,7 @@ def _band_predict(
 
     _work_path = Path(generate_work_path()).absolute()
     work_dir = Path(work_path).absolute()
+    work_dir.mkdir(parents=True, exist_ok=True)
 
     if not model_file_path.exists():
         raise FileNotFoundError(f"Model file not found: {model_file_path}")
@@ -622,13 +847,16 @@ def _band_predict(
         bandstructure_filename = f"bandstructure_{timestamp}"
         output_bandstructure_path = work_dir / bandstructure_filename
         band_data.export(output_bandstructure_path)
+        output_bandstructure_path = output_bandstructure_path.with_suffix(".npz")
+        if not output_bandstructure_path.is_file():
+            raise RuntimeError(f"Band structure export did not create {output_bandstructure_path}")
 
         band_img_filename = f"band_{timestamp}.png"
         output_band_img_path = work_dir / band_img_filename
         band_data.plot(filename=output_band_img_path,
                        emin=-25,emax=8)
 
-    return {"band_structure_file_path": str(output_bandstructure_path) + '.npz',
+    return {"band_structure_file_path": output_bandstructure_path,
             "image_file_path": output_band_img_path,
             "fermi_level": fermi_level}
 
@@ -643,22 +871,43 @@ def _band_predict_with_julia(
         work_path: str = ".",
         emin: float = None,
         emax: float = None,
-        efermi: float = None,
-        pseudo_efermi: float = None,
+        fermi_level: float = None,
+        pseudo_fermi_level: float = None,
         julia_script_path: Path = None,
         num_band: int = 30
     ):
     """
-    使用输入的模型预测结构能带。
+    【重要】非默认能带计算方法：仅在下述适用条件全部满足时使用 Julia 稀疏求解器。
+    使用本方法预测结构的局域能带。
+
+    重要的适用范围与选择规则:
+        Julia 方法只能得到局域能带，但计算速度远快于普通方法。对于结构较小，
+        或费米能级不准确的情况，不要使用本方法；此时应使用普通的
+        ``_band_predict``，结果更保险。
+
+        本方法仅适用于同时满足以下条件的情况：
+        1. 结构较大，普通方法的计算成本过高；
+        2. 费米能级十分准确（由外部输入，或模型准确度极高）；
+        3. 只需要局域能带来获得带隙等信息，而不需要完整能带结构。
+
+        Agent 不应仅因为 Julia 方法更快就默认选择它；如果结构大小或费米能级
+        可靠性不明确，应选择普通的 ``_band_predict``。
 
     参数:
-        model_file_name: 使用的model路径。
-        structure_file_name: 输入的结构文件路径。结构文件应为vasp的格式
+        model_file_path: 使用的 model 路径。
+        structure_file_path: 输入的结构文件路径。结构文件应为 VASP 格式。
         kpath: K-Path，格式如"[[0.0,0.0,0.0,50,G],[0.5,0.0,0.5,1,X]]"
         nel_atom: Dictionary mapping element symbols to number of valence electrons. Example: {'Si': 4, 'H': 1}
         kmesh: 用于计算费米能级的k点网格，默认为[5,5,5]，格式如"[5,5,5]"
         override_overlap: 覆盖的overlap文件，使用后覆盖模型产生的overlap
+        eig_solver: 为兼容 Python 工作流保留的本征值求解器标签。
         work_path: 能带信息的保存路径。注意应该是文件夹而不是文件。
+        emin: 绘图能量窗口下限。
+        emax: 绘图能量窗口上限。
+        fermi_level: 精确费米能级；不能与 ``pseudo_fermi_level`` 同时提供。
+        pseudo_fermi_level: 近似费米能级；不能与 ``fermi_level`` 同时提供。
+        julia_script_path: Julia 稀疏求解脚本路径；默认使用 DeePTB 内置脚本。
+        num_band: 稀疏求解器计算的能带数，默认 30。
 
     返回:
         包含能带文件路径的字典。
@@ -670,10 +919,10 @@ def _band_predict_with_julia(
 
     assert model_file_path, "模型必须输入"
     assert structure_file_path, "输入的结构必须输入"
-    assert not (efermi and pseudo_efermi), "费米能级与粗费米能级不该同时输入！"
+    assert not (fermi_level and pseudo_fermi_level), "费米能级与粗费米能级不该同时输入！"
 
-    if pseudo_efermi:
-        efermi = pseudo_efermi
+    if pseudo_fermi_level:
+        fermi_level = pseudo_fermi_level
 
     if not emin:
         emin=-1e6
@@ -682,6 +931,7 @@ def _band_predict_with_julia(
 
     _work_path = Path(generate_work_path()).absolute()
     work_dir = Path(work_path).absolute()
+    work_dir.mkdir(parents=True, exist_ok=True)
 
     if not model_file_path.exists():
         raise FileNotFoundError(f"Model file not found: {model_file_path}")
@@ -722,7 +972,7 @@ def _band_predict_with_julia(
                 "kpath": kpath_config["kpath"],
                 "klabels": kpath_config["klabels"],
                 "nel_atom": nel_atom,
-                "E_fermi": efermi if efermi else 0,
+                "E_fermi": fermi_level if fermi_level else 0,
                 "emin": emin,
                 "emax": emax
             },
@@ -781,7 +1031,7 @@ def _band_predict_with_julia(
             print(f"Eigenvalues shape: {evals.shape}")
 
         # get fermi level
-        if efermi is None:
+        if fermi_level is None:
             print("fermi level not inputted! calculating fermi level...")
             from dptb.postprocess.unified.utils import calculate_fermi_level
             ef = calculate_fermi_level(eigenvalues=data["eigenvalues"],
@@ -811,12 +1061,13 @@ def _band_predict_with_julia(
         band_img_filename = f"band_{timestamp}.png"
         output_band_img_path = work_dir / band_img_filename
         plt.savefig(output_band_img_path, dpi=300)
+        plt.close()
 
         bandstructure_filename = f"bandstructure_{timestamp}.npy"
         output_bandstructure_path = work_dir / bandstructure_filename
         shutil.copy(expected_npy, output_bandstructure_path)
 
-    return {"band_structure_file_path": str(output_bandstructure_path),
+    return {"band_structure_file_path": output_bandstructure_path,
             "image_file_path": output_band_img_path,
             "fermi_level": data["E_fermi"]}
 
@@ -825,7 +1076,7 @@ def _band_compare(
         dft_result_path: Path,
         e_min: float = None,
         e_max: float = None,
-        match_efermi: bool = False,
+        match_fermi_level: bool = False,
         delta: float = None,
 ):
     """
@@ -841,6 +1092,10 @@ def _band_compare(
         最小能量范围（相对费米能级）
     e_max : float
         最大能量范围（相对费米能级）
+    match_fermi_level : bool, optional
+        是否分别减去 DFT 和 DeePTB 的费米能级后再进行对比。
+    delta : float, optional
+        对齐费米能级后施加到 DeePTB 能带上的额外能量平移。
 
     Returns
     -------
@@ -856,14 +1111,15 @@ def _band_compare(
     from pathlib import Path
 
     work_path = Path(generate_work_path()).absolute()
+    work_path.mkdir(parents=True, exist_ok=True)
 
     # ==========================================================
     # 1. 读取 DFT 能带（ABACUS）
     # ==========================================================
-    efermi_dict = _abacus_get_efermi(
+    fermi_level_dict = _abacus_get_fermi_level(
         abacus_out_path=dft_result_path
     )
-    dft_efermi = efermi_dict["efermi"]
+    dft_fermi_level = fermi_level_dict["fermi_level"]
 
     band_file = dft_result_path / "BANDS_1.dat"
     if not band_file.exists():
@@ -887,8 +1143,8 @@ def _band_compare(
     dft_band = dft_data[:, 2:]
 
     # 相对费米能级
-    if match_efermi:
-        dft_band = dft_band - dft_efermi
+    if match_fermi_level:
+        dft_band = dft_band - dft_fermi_level
 
     # ==========================================================
     # 2. 读取 DPTB 能带
@@ -903,14 +1159,14 @@ def _band_compare(
     dptb_band = dptb_result["eigenvalues"]
 
     if "fermi_level" in dptb_result:
-        dptb_efermi = float(
+        dptb_fermi_level = float(
             np.squeeze(dptb_result["fermi_level"])
         )
     else:
-        dptb_efermi = 0.0
+        dptb_fermi_level = 0.0
 
-    if match_efermi:
-        dptb_band = dptb_band - dptb_efermi
+    if match_fermi_level:
+        dptb_band = dptb_band - dptb_fermi_level
         if delta:
             dptb_band = dptb_band + delta
 
@@ -993,7 +1249,7 @@ def _band_compare(
         )
 
     # 费米能级
-    if match_efermi:
+    if match_fermi_level:
         plt.axhline(
             0,
             linestyle="--",
@@ -1008,14 +1264,14 @@ def _band_compare(
             )
     else:
         plt.axhline(
-            dft_efermi,
+            dft_fermi_level,
             linestyle="--",
             linewidth=1,
             color="black",
             label="DFT $E_F$"
         )
         plt.axhline(
-            dptb_efermi,
+            dptb_fermi_level,
             linestyle="--",
             linewidth=1,
             color="red",
@@ -1025,7 +1281,7 @@ def _band_compare(
     plt.ylim(e_min, e_max)
 
     plt.xlabel("k-path")
-    ylabel = "$E - E_f$ (eV)" if match_efermi else "Energy (eV)"
+    ylabel = "$E - E_f$ (eV)" if match_fermi_level else "Energy (eV)"
     plt.ylabel(ylabel)
     plt.title("DFT vs DeePTB Band Structure")
 

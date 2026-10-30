@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Any, Dict, List, TypedDict
+from typing import Any, Dict, List, Optional, TypedDict
 
 
 class ModelResult(TypedDict):
@@ -41,31 +41,44 @@ class ConfigResult(TypedDict):
 
 
 class AbacusRunResult(TypedDict):
+    """Complete calculation directory, including inputs and OUT.ABACUS."""
+
     abacus_output_path: Path
 
 
-class EfermiResult(TypedDict):
-    efermi: float
+class FermiLevelResult(TypedDict):
+    fermi_level: float
 
 
 class BandPlotResult(TypedDict):
     abacus_output_path: Path
 
 
-class BandGapResult(TypedDict, total=False):
+class BandGapResult(TypedDict):
     band_gap: float
-    vbm: float
-    cbm: float
-    vbm_band_index: int
-    cbm_band_index: int
-    gap_lower: float
-    gap_upper: float
+    vbm: Optional[float]
+    cbm: Optional[float]
+    vbm_band_index: Optional[int]
+    cbm_band_index: Optional[int]
+    vbm_kpoint_index: Optional[int]
+    cbm_kpoint_index: Optional[int]
+    gap_lower: Optional[float]
+    gap_upper: Optional[float]
     gap_width: float
-    gap_center: float
-    distance_to_fermi: float
-    fermi_inside_gap: bool
-    all_gaps: List[Any]
+    gap_center: Optional[float]
+    fermi_level: float
+    fermi_level_source: str
+    calculation_method: str
+    distance_to_fermi: Optional[float]
+    fermi_inside_gap: Optional[bool]
+    all_gaps: List[Dict[str, float]]
     risky: bool
+    is_valid: bool
+    status: str
+    diagnostic_message: Optional[str]
+    k_target: Optional[int]
+    energy_window_min: Optional[float]
+    energy_window_max: Optional[float]
 
 
 class BandCompareResult(TypedDict):
@@ -76,8 +89,17 @@ class StructureConvertResult(TypedDict):
     structure_file_path: Path
 
 
-class DftioParseResult(TypedDict):
+class DftioParseResult(TypedDict, total=False):
     output_path: Path
+    input_mapping: Dict[str, str]
+
+
+class DeePTBTrainingResult(TypedDict, total=False):
+    output_path: Path
+    config_path: Path
+    log_path: Path
+    command: str
+    model_path: Path
 
 
 class HamiltonianTestResult(TypedDict):

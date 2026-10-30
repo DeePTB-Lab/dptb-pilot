@@ -3,11 +3,13 @@ from typing import Any, List, TypedDict
 
 
 class AbacusRunResult(TypedDict):
+    """Complete calculation directory, including inputs and OUT.ABACUS."""
+
     abacus_output_path: Path
 
 
-class EfermiResult(TypedDict):
-    efermi: float
+class FermiLevelResult(TypedDict):
+    fermi_level: float
 
 
 class BandPlotResult(TypedDict):
